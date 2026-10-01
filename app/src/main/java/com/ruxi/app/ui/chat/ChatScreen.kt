@@ -126,6 +126,8 @@ fun ChatScreen(
     editDraft: String,
     actionTarget: ChatMessage?,
     onMessageLongPress: (ChatMessage) -> Unit,
+    /** 关闭操作菜单。**必须独立于 onMessageLongPress** —— 那个是「打开」 */
+    onDismissMenu: () -> Unit,
     onEditDraftChange: (String) -> Unit,
     onEditConfirm: () -> Unit,
     onEditCancel: () -> Unit,
@@ -216,14 +218,10 @@ fun ChatScreen(
                                 separator = separator,
                                 showThinking = showThinking,
                                 thinkingExpanded = thinkingExpanded,
-                                onLongPress = { onMessageLongPress(
-                                    ChatMessage(
-                                        role = "assistant",
-                                        content = streamingText,
-                                        reasoning = streamingReasoning,
-                                        incomplete = true,
-                                    )
-                                ) },
+                                // 流式气泡**不响应长按**：它是每次重组都新建的临时对象
+                                // （id 都是随机 UUID），拿它去编辑/删除/重答都会对不上历史里那条。
+                                // 等生成完、落盘成真消息之后才可操作。
+                                onLongPress = {},
                             )
                         }
                     }
@@ -337,7 +335,7 @@ fun ChatScreen(
         // 能不能重答：只有 assistant 消息、且不在流式中才有意义
         val canRegenerate = msg.isAssistant && !msg.incomplete && !streaming
         AlertDialog(
-            onDismissRequest = { onMessageLongPress(msg) },
+            onDismissRequest = onDismissMenu,
             title = {
                 Text(
                     text = if (msg.isUser) "用户消息" else "AI 回复",
@@ -353,13 +351,13 @@ fun ChatScreen(
                     MenuAction("复制文本") {
                         clipboard.setText(AnnotatedString(msg.content))
                         context.toast("已复制")
-                        onMessageLongPress(msg)
+                        onDismissMenu()
                     }
                     MenuAction("删除这条", danger = true) { onDeleteMessage(msg) }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { onMessageLongPress(msg) }) { Text("关闭") }
+                TextButton(onClick = onDismissMenu) { Text("关闭") }
             },
         )
     }

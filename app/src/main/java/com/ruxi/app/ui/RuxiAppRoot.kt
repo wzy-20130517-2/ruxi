@@ -454,6 +454,7 @@ fun RuxiAppRoot(store: AppStore) {
                         onMessageLongPress = { msg ->
                             actionTarget = msg
                         },
+                        onDismissMenu = { actionTarget = null },
                         onEditDraftChange = { editDraft = it },
                         onEditConfirm = {
                             val id = editingMessageId

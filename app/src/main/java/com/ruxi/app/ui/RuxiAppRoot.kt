@@ -79,6 +79,18 @@ fun RuxiAppRoot(store: AppStore) {
 
     var route by remember { mutableStateOf<Route>(Route.Home) }
 
+
+    // 当前对话的瞬时状态。
+    // [streamingSessionId] 用来把流式状态**绑定到具体会话** —— 否则用户在流式过程中
+    // 返回首页、点进另一个角色，会看到上一个会话的流式气泡，且停止按钮作用于错误的会话。
+    var streaming by remember { mutableStateOf(false) }
+    var streamingSessionId by remember { mutableStateOf<String?>(null) }
+    var streamingText by remember { mutableStateOf("") }
+    // 思考过程单独存：它跟正文走不同的渲染分支，混在一起会污染正文
+    var streamingReasoning by remember { mutableStateOf("") }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var streamJob by remember { mutableStateOf<Job?>(null) }
+
     /**
      * 发起一次补全请求（发送新消息 / 重新回复 共用）。
      *
@@ -165,16 +177,6 @@ fun RuxiAppRoot(store: AppStore) {
         }
     }
 
-    // 当前对话的瞬时状态。
-    // [streamingSessionId] 用来把流式状态**绑定到具体会话** —— 否则用户在流式过程中
-    // 返回首页、点进另一个角色，会看到上一个会话的流式气泡，且停止按钮作用于错误的会话。
-    var streaming by remember { mutableStateOf(false) }
-    var streamingSessionId by remember { mutableStateOf<String?>(null) }
-    var streamingText by remember { mutableStateOf("") }
-    // 思考过程单独存：它跟正文走不同的渲染分支，混在一起会污染正文
-    var streamingReasoning by remember { mutableStateOf("") }
-    var errorText by remember { mutableStateOf<String?>(null) }
-    var streamJob by remember { mutableStateOf<Job?>(null) }
     // 正在编辑的消息 id（null = 没在编辑）
     var editingMessageId by remember { mutableStateOf<String?>(null) }
     var editDraft by remember { mutableStateOf("") }

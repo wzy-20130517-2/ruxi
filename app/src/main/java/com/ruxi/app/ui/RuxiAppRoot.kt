@@ -364,8 +364,23 @@ fun RuxiAppRoot(store: AppStore) {
                             streamingReasoning = ""
                         },
                         onClearMessages = {
+                            // 清空 = 回到「刚建会话」的状态，所以两件事都要做：
+                            //   1. injectedImages 重置 → 角色卡图片/备注会重新注入
+                            //   2. **开场白要放回去** → 否则只回来一半，很别扭
+                            //
+                            // ⚠️ 开场白只在 createSession() 里注入，清空走的是 upsertSession，
+                            // 不补这一步的话开场白会永久丢失（用户预期是「重来一遍」）。
+                            val greeting = card.greeting
                             store.upsertSession(
-                                session.copy(messages = emptyList(), injectedImages = false)
+                                session.copy(
+                                    messages = if (greeting.isBlank()) emptyList() else listOf(
+                                        ChatMessage(
+                                            role = Role.ASSISTANT,
+                                            content = greeting,
+                                        )
+                                    ),
+                                    injectedImages = false,
+                                )
                             )
                         },
                         onEditCharacter = {

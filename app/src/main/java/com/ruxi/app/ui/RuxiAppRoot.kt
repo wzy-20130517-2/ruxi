@@ -37,6 +37,8 @@ sealed interface Route {
     data object Home : Route
     data object Settings : Route
     data object Appearance : Route
+    /** 从对话页直达供应商设置（改完返回对话，不绕首页） */
+    data object ProviderSettings : Route
     data class CharacterEdit(val id: String?) : Route
     data class ProviderEdit(val id: String?) : Route
     data class Chat(val characterId: String, val sessionId: String) : Route
@@ -73,6 +75,8 @@ fun RuxiAppRoot(store: AppStore) {
     var streaming by remember { mutableStateOf(false) }
     var streamingSessionId by remember { mutableStateOf<String?>(null) }
     var streamingText by remember { mutableStateOf("") }
+    // 思考过程单独存：它跟正文走不同的渲染分支，混在一起会污染正文
+    var streamingReasoning by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var streamJob by remember { mutableStateOf<Job?>(null) }
 
@@ -82,8 +86,14 @@ fun RuxiAppRoot(store: AppStore) {
         color = androidx.compose.ui.graphics.Color.Transparent,
     ) {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            // 背景只在对话页生效，且用**当前角色卡**的图 ——
+            // 首页/设置页保持纯色，免得切换角色时背景乱闪。
+            val chatCard = (route as? Route.Chat)?.let { store.characterById(it.characterId) }
             com.ruxi.app.ui.components.BackgroundLayer(
-                settings = uiSettings,
+                imagePath = chatCard?.backgroundImage.orEmpty(),
+                dim = chatCard?.backgroundDim ?: 45,
+                blur = chatCard?.backgroundBlur ?: 0,
+                opacity = chatCard?.backgroundOpacity ?: 100,
                 isDark = uiSettings.themeMode != "light",
             )
             when (val r = route) {
@@ -124,12 +134,25 @@ fun RuxiAppRoot(store: AppStore) {
                 onOpenAppearance = { route = Route.Appearance },
             )
 
+            Route.ProviderSettings -> SettingsScreen(
+                providers = providers,
+                activeId = activeProviderId,
+                promptSettings = promptSettings,
+                uiSettings = uiSettings,
+                onBack = { route = Route.Home },
+                onAddProvider = { route = Route.ProviderEdit(null) },
+                onEditProvider = { route = Route.ProviderEdit(it) },
+                onDeleteProvider = { store.deleteProvider(it) },
+                onSelectProvider = { store.setActiveProvider(it) },
+                onUpdatePrompt = { store.updatePromptSettings(it) },
+                onUpdateUi = { store.updateUiSettings(it) },
+                onOpenAppearance = { route = Route.Appearance },
+            )
+
             Route.Appearance -> AppearanceScreen(
                 settings = uiSettings,
                 onBack = { route = Route.Settings },
                 onUpdate = { store.updateUiSettings(it) },
-                onPickBackground = { uri -> store.importImageFile(uri) },
-                onDeleteBackground = { path -> store.deleteImageFile(path) },
             )
 
             is Route.ProviderEdit -> {
@@ -156,6 +179,8 @@ fun RuxiAppRoot(store: AppStore) {
                     },
                     onPickImage = { uri -> store.importImage(uri) },
                     onRemoveImage = { path -> store.deleteImageFile(path) },
+                    onPickBackground = { uri -> store.importImageFile(uri) },
+                    onRemoveBackground = { path -> store.deleteImageFile(path) },
                 )
             }
 
@@ -176,6 +201,9 @@ fun RuxiAppRoot(store: AppStore) {
                         // 「显示原始输出」= 用户想看原文；或用户关掉了自动还原
                         showRaw = uiSettings.showRawText || !promptSettings.autoRestore,
                         separator = promptSettings.separator.ifEmpty { "·" },
+                        showThinking = uiSettings.showThinking,
+                        thinkingExpanded = uiSettings.thinkingExpanded,
+                        streamingReasoning = streamingReasoning,
                         onBack = {
                             // 返回时**不打断**流式：用户可能只是想看一眼角色列表。
                             // 流结束后消息照常落盘，回来还能看到完整回复。
@@ -212,8 +240,10 @@ fun RuxiAppRoot(store: AppStore) {
                                 streaming = true
                                 streamingSessionId = session.id
                                 streamingText = ""
+                                streamingReasoning = ""
                                 streamJob = scope.launch {
                                     val buffer = StringBuilder()
+                                    val thinkBuffer = StringBuilder()
                                     var failed = false
                                     try {
                                         ChatClient.get().stream(provider, built.messages)
@@ -222,6 +252,10 @@ fun RuxiAppRoot(store: AppStore) {
                                                     is StreamEvent.Delta -> {
                                                         buffer.append(event.text)
                                                         streamingText = buffer.toString()
+                                                    }
+                                                    is StreamEvent.Reasoning -> {
+                                                        thinkBuffer.append(event.text)
+                                                        streamingReasoning = thinkBuffer.toString()
                                                     }
                                                     is StreamEvent.Done -> Unit
                                                     is StreamEvent.Failed -> {
@@ -236,12 +270,13 @@ fun RuxiAppRoot(store: AppStore) {
                                         val finalText = buffer.toString()
                                         // 有内容就存，哪怕是失败中断后的半截 ——
                                         // 用户已经看到这些字了，丢掉会让界面「凭空少一段」
-                                        if (finalText.isNotBlank()) {
+                                        if (finalText.isNotBlank() || thinkBuffer.isNotBlank()) {
                                             store.appendMessage(
                                                 session.id,
                                                 ChatMessage(
                                                     role = Role.ASSISTANT,
                                                     content = finalText,
+                                                    reasoning = thinkBuffer.toString(),
                                                 )
                                             )
                                             // 标记图片已注入：只有成功拿到回复才算真的注入过。
@@ -254,6 +289,7 @@ fun RuxiAppRoot(store: AppStore) {
                                             }
                                         }
                                         streamingText = ""
+                                        streamingReasoning = ""
                                     }
                                 }
                             }
@@ -263,40 +299,28 @@ fun RuxiAppRoot(store: AppStore) {
                             streaming = false
                             streamingSessionId = null
                             val partial = streamingText
-                            if (partial.isNotBlank()) {
+                            val partialThink = streamingReasoning
+                            if (partial.isNotBlank() || partialThink.isNotBlank()) {
                                 store.appendMessage(
                                     session.id,
-                                    ChatMessage(role = Role.ASSISTANT, content = partial),
+                                    ChatMessage(
+                                        role = Role.ASSISTANT,
+                                        content = partial,
+                                        reasoning = partialThink,
+                                    ),
                                 )
                             }
                             streamingText = ""
+                            streamingReasoning = ""
                         },
                         onClearMessages = {
                             store.upsertSession(
                                 session.copy(messages = emptyList(), injectedImages = false)
                             )
                         },
-                        onToggleRaw = {
-                            store.updateUiSettings(
-                                uiSettings.copy(showRawText = !uiSettings.showRawText)
-                            )
-                        },
+                        onEditCharacter = { route = Route.CharacterEdit(card.id) },
+                        onOpenProviderSettings = { route = Route.ProviderSettings },
                         onPickImage = { uri -> store.importImage(uri) },
-                        onShowPrompt = {
-                            val built = PromptEngine.build(
-                                card = card,
-                                session = store.sessionById(session.id) ?: session,
-                                userText = "",
-                                userImages = emptyList(),
-                                settings = promptSettings,
-                            )
-                            val sysLen = built.messages.firstOrNull()
-                                ?.takeIf { it.role == Role.SYSTEM }?.content?.length ?: 0
-                            val imgCount = built.messages.count { it.images.isNotEmpty() }
-                            errorText = "本轮注入 ${built.messages.size} 条消息 · " +
-                                "系统提示词 $sysLen 字 · 图片 $imgCount 条 · " +
-                                "分隔符「${promptSettings.separator}」"
-                        },
                     )
                 }
             }

@@ -120,6 +120,9 @@ class ChatClient {
                     is DeltaResult.Text -> if (delta.text.isNotEmpty()) {
                         trySend(StreamEvent.Delta(delta.text))
                     }
+                    is DeltaResult.Reasoning -> if (delta.text.isNotEmpty()) {
+                        trySend(StreamEvent.Reasoning(delta.text))
+                    }
                     is DeltaResult.Finished -> {
                         trySend(StreamEvent.Done)
                         break
@@ -176,6 +179,93 @@ class ChatClient {
         }
     }
 
+    /**
+     * 拉取可用模型列表（GET /models）。
+     *
+     * 返回 (模型 id 列表, 错误说明)。失败时列表为空。
+     *
+     * 注意：不是所有中转站都实现 /models，有些会返回 404 或空数组。
+     * 这不算错误 —— 调用方应该让用户仍能手动输入模型名。
+     */
+    suspend fun listModels(provider: Provider): Pair<List<String>, String?> {
+        val key = provider.effectiveKeys.firstOrNull().orEmpty()
+        if (key.isBlank()) return emptyList<String>() to "未配置 API Key"
+
+        val base = provider.normalizedBase()
+        // Anthropic 的模型列表端点与 OpenAI 不同；且不少中转站只实现了 OpenAI 那个。
+        // 统一先试 OpenAI 风格，失败再试 anthropic 风格。
+        val candidates = when (provider.proto) {
+            Protocol.OPENAI -> listOf("$base/models")
+            Protocol.ANTHROPIC -> listOf("$base/models", "$base/v1/models")
+        }
+
+        var lastError: String? = null
+        for (url in candidates.distinct()) {
+            try {
+                val builder = Request.Builder().url(url).get()
+                when (provider.proto) {
+                    Protocol.OPENAI -> builder.header("Authorization", "Bearer $key")
+                    Protocol.ANTHROPIC -> {
+                        builder.header("x-api-key", key)
+                        builder.header("anthropic-version", "2023-06-01")
+                    }
+                }
+                RequestBuilder.parseExtraHeaders(provider.extraHeaders).forEach { (k, v) ->
+                    runCatching { builder.header(k, v) }
+                }
+
+                normalClient.newCall(builder.build()).execute().use { resp ->
+                    val text = runCatching { resp.body?.string().orEmpty() }.getOrDefault("")
+                    if (!resp.isSuccessful) {
+                        lastError = describeHttpError(resp.code, text)
+                        return@use
+                    }
+                    val ids = parseModelIds(text)
+                    if (ids.isNotEmpty()) return ids to null
+                    lastError = "服务器返回的模型列表是空的"
+                }
+            } catch (e: Exception) {
+                lastError = friendlyMessage(e)
+            }
+        }
+        return emptyList<String>() to (lastError ?: "无法获取模型列表")
+    }
+
+    /**
+     * 从响应里挖出模型 id。
+     *
+     * 兼容三种常见形态：
+     *   1. OpenAI 标准：`{"data":[{"id":"gpt-4o"}, ...]}`
+     *   2. 直接数组：`[{"id":"..."}]` 或 `["model-a", "model-b"]`
+     *   3. 键名变体：`{"models":[...]}` / `{"result":[...]}`
+     * 中转站实现五花八门，多兼容几种能少很多「拉不到列表」的投诉。
+     */
+    private fun parseModelIds(raw: String): List<String> {
+        val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return emptyList()
+
+        val arr = when {
+            root is kotlinx.serialization.json.JsonArray -> root
+            root is JsonObject -> {
+                val keys = listOf("data", "models", "result", "list")
+                keys.firstNotNullOfOrNull { k ->
+                    runCatching { root[k]?.jsonArray }.getOrNull()
+                }
+            }
+            else -> null
+        } ?: return emptyList()
+
+        return arr.mapNotNull { el ->
+            runCatching {
+                when (el) {
+                    is JsonObject -> el["id"]?.jsonPrimitive?.content
+                        ?: el["name"]?.jsonPrimitive?.content
+                        ?: el["model"]?.jsonPrimitive?.content
+                    else -> el.jsonPrimitive.content
+                }
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+        }.distinct().sorted()
+    }
+
     // ─────────────────────── 内部 ───────────────────────
 
     private fun buildRequest(
@@ -210,6 +300,8 @@ class ChatClient {
 
     private sealed interface DeltaResult {
         data class Text(val text: String) : DeltaResult
+        /** 思考过程（思维链）。与正文分开，界面上单独渲染。 */
+        data class Reasoning(val text: String) : DeltaResult
         data object Finished : DeltaResult
         data class Error(val message: String) : DeltaResult
         data object Ignore : DeltaResult
@@ -241,10 +333,25 @@ class ChatClient {
         if (choices.isEmpty()) return DeltaResult.Ignore
 
         val first = runCatching { choices[0].jsonObject }.getOrNull() ?: return DeltaResult.Ignore
+        val deltaObj = runCatching { first["delta"]?.jsonObject }.getOrNull()
 
-        // 有的实现在 delta 里给 reasoning_content（思维链），不该混进正文
+        // ── 思考内容 ──
+        // 各家字段名不统一，实测见过这几种：
+        //   reasoning_content（DeepSeek / 多数中转）
+        //   reasoning（部分网关）
+        //   thinking（GLM 系）
+        // 顺序不能反：reasoning_content 最通用，放最前面优先匹配。
+        if (deltaObj != null) {
+            for (field in listOf("reasoning_content", "reasoning", "thinking")) {
+                val r = runCatching {
+                    deltaObj[field]?.jsonPrimitive?.content
+                }.getOrNull()
+                if (!r.isNullOrEmpty()) return DeltaResult.Reasoning(r)
+            }
+        }
+
         val text = runCatching {
-            first["delta"]?.jsonObject?.get("content")?.jsonPrimitive?.content
+            deltaObj?.get("content")?.jsonPrimitive?.content
         }.getOrNull().orEmpty()
 
         if (text.isNotEmpty()) return DeltaResult.Text(text)
@@ -262,8 +369,15 @@ class ChatClient {
         val type = runCatching { root["type"]?.jsonPrimitive?.content }.getOrNull()
         return when (type) {
             "content_block_delta" -> {
+                val deltaObj = runCatching { root["delta"]?.jsonObject }.getOrNull()
+                // Anthropic 的思考增量是 thinking_delta，字段名也是 thinking
+                val thinking = runCatching {
+                    deltaObj?.get("thinking")?.jsonPrimitive?.content
+                }.getOrNull()
+                if (!thinking.isNullOrEmpty()) return DeltaResult.Reasoning(thinking)
+
                 val text = runCatching {
-                    root["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.content
+                    deltaObj?.get("text")?.jsonPrimitive?.content
                 }.getOrNull().orEmpty()
                 if (text.isEmpty()) DeltaResult.Ignore else DeltaResult.Text(text)
             }
@@ -320,8 +434,10 @@ class ChatClient {
 
 /** 流式事件 */
 sealed interface StreamEvent {
-    /** 增量文本 */
+    /** 正文增量 */
     data class Delta(val text: String) : StreamEvent
+    /** 思考过程增量（思维链）。界面单独渲染，不计入正文 */
+    data class Reasoning(val text: String) : StreamEvent
     /** 正常结束 */
     data object Done : StreamEvent
     /** 失败（message 已是可读中文） */

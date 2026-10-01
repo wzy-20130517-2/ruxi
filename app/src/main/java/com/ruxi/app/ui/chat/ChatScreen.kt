@@ -30,11 +30,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -88,13 +90,19 @@ fun ChatScreen(
     showRaw: Boolean,
     /** 当前生效的分隔符，用于还原显示。必须来自设置，不能硬编码。 */
     separator: String,
+    /** 是否显示模型思考过程 */
+    showThinking: Boolean,
+    /** 思考块默认是否展开 */
+    thinkingExpanded: Boolean,
+    /** 正在流式接收的思考内容 */
+    streamingReasoning: String,
     onBack: () -> Unit,
     onSend: (String, List<AttachedImage>) -> Unit,
     onStop: () -> Unit,
     onClearMessages: () -> Unit,
-    onToggleRaw: () -> Unit,
+    onEditCharacter: () -> Unit,
+    onOpenProviderSettings: () -> Unit,
     onPickImage: (android.net.Uri) -> AttachedImage?,
-    onShowPrompt: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
     var pendingImages by remember { mutableStateOf(emptyList<AttachedImage>()) }
@@ -128,9 +136,8 @@ fun ChatScreen(
                 menuOpen = menuOpen,
                 onMenuOpenChange = { menuOpen = it },
                 onClearMessages = onClearMessages,
-                onShowPrompt = onShowPrompt,
-                onToggleRaw = onToggleRaw,
-                showRaw = showRaw,
+                onEditCharacter = onEditCharacter,
+                onOpenProviderSettings = onOpenProviderSettings,
             )
         },
     ) { padding ->
@@ -159,12 +166,15 @@ fun ChatScreen(
                                 message = ChatMessage(
                                     role = "assistant",
                                     content = streamingText,
+                                    reasoning = streamingReasoning,
                                     incomplete = true,
                                 ),
                                 card = card,
                                 isStreaming = true,
                                 showRaw = showRaw,
                                 separator = separator,
+                                showThinking = showThinking,
+                                thinkingExpanded = thinkingExpanded,
                             )
                         }
                     }
@@ -178,6 +188,8 @@ fun ChatScreen(
                             isStreaming = false,
                             showRaw = showRaw,
                             separator = separator,
+                            showThinking = showThinking,
+                            thinkingExpanded = thinkingExpanded,
                         )
                     }
                 }
@@ -271,9 +283,8 @@ private fun ChatTopBar(
     menuOpen: Boolean,
     onMenuOpenChange: (Boolean) -> Unit,
     onClearMessages: () -> Unit,
-    onShowPrompt: () -> Unit,
-    onToggleRaw: () -> Unit,
-    showRaw: Boolean,
+    onEditCharacter: () -> Unit,
+    onOpenProviderSettings: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Row(
@@ -314,13 +325,21 @@ private fun ChatTopBar(
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenuOpenChange(false) }) {
+                    // 对话进行到一半最常见的两个念头：
+                    //   ① 「角色说话不对劲」→ 改这个角色的提示词
+                    //   ② 「没反应/答非所问」→ 检查供应商配置
+                    // 所以这两个入口放最上面，直接跳转，不用退回首页绕一圈。
                     DropdownMenuItem(
-                        text = { Text("查看本轮提示词") },
-                        onClick = { onMenuOpenChange(false); onShowPrompt() },
+                        text = { Text("编辑角色提示词") },
+                        onClick = { onMenuOpenChange(false); onEditCharacter() },
                     )
                     DropdownMenuItem(
-                        text = { Text(if (showRaw) "显示还原文本" else "显示原始输出") },
-                        onClick = { onMenuOpenChange(false); onToggleRaw() },
+                        text = { Text("供应商设置") },
+                        onClick = { onMenuOpenChange(false); onOpenProviderSettings() },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                     )
                     DropdownMenuItem(
                         text = { Text("清空对话", color = MaterialTheme.colorScheme.error) },
@@ -340,6 +359,8 @@ private fun MessageBubble(
     isStreaming: Boolean,
     showRaw: Boolean,
     separator: String,
+    showThinking: Boolean,
+    thinkingExpanded: Boolean,
 ) {
     val isUser = message.isUser
     Row(
@@ -356,6 +377,16 @@ private fun MessageBubble(
             modifier = Modifier.widthIn(max = 290.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         ) {
+            // ── 思考过程（仅 assistant，且设置里开启时才显示）──
+            if (showThinking && !isUser && message.hasReasoning) {
+                ThinkingBlock(
+                    text = message.reasoning,
+                    expandedByDefault = thinkingExpanded,
+                    streaming = isStreaming,
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+
             // 图片
             if (message.images.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -409,6 +440,72 @@ private fun MessageBubble(
                 Spacer(Modifier.height(4.dp))
                 TypingDots()
             }
+        }
+    }
+}
+
+/**
+ * 思考过程展示块。
+ *
+ * 设计取舍：
+ * - 默认**折叠**。思维链通常很长，展开会淹没正文；但完全不给看又显得不透明。
+ * - 折叠时显示「思考中…」+ 已生成的字数，让用户知道它在动，不是卡住。
+ * - 用等宽偏暗的样式，跟正文视觉上明确区分 —— 它是「草稿纸」不是「台词」。
+ */
+@Composable
+private fun ThinkingBlock(
+    text: String,
+    expandedByDefault: Boolean,
+    streaming: Boolean,
+) {
+    var expanded by remember(text.take(1)) { mutableStateOf(expandedByDefault) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(RuxiColors.accent.copy(alpha = 0.07f))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Psychology,
+                contentDescription = null,
+                tint = RuxiColors.accent.copy(alpha = 0.8f),
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = if (streaming) "思考中…" else "思考过程",
+                style = MaterialTheme.typography.labelMedium,
+                color = RuxiColors.accent,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${text.length} 字 ${if (expanded) "▾" else "▸"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = RuxiColors.TextTertiary,
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 折叠态给个预览，展开后全量
+                maxLines = if (streaming) Int.MAX_VALUE else Int.MAX_VALUE,
+            )
+        } else if (text.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = text.takeLast(80).replace('\n', ' '),
+                style = MaterialTheme.typography.bodySmall,
+                color = RuxiColors.TextTertiary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

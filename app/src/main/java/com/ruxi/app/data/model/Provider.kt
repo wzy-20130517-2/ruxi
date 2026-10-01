@@ -16,6 +16,30 @@ enum class Protocol(val id: String, val label: String) {
 }
 
 /**
+ * 思考强度。
+ *
+ * 不同厂商对「思考预算」的叫法完全不同：
+ * - OpenAI 系（含 DeepSeek）：`reasoning_effort` = minimal/low/medium/high
+ * - Anthropic：`thinking.budget_tokens` = 具体 token 数
+ * - GLM / 其它中转：常直接吃 `thinking: {type: "enabled"}`
+ *
+ * 所以这里用**归一化的档位**，由 [RequestBuilder] 按协议翻译成各自的字段。
+ * 这样用户只需理解「思考多深」，不用管后端差异。
+ */
+enum class Effort(val id: String, val label: String, val budgetTokens: Int) {
+    NONE("none", "关闭", 0),
+    LOW("low", "轻度", 1024),
+    MEDIUM("medium", "中等", 4096),
+    HIGH("high", "深度", 16384),
+    ;
+
+    companion object {
+        fun from(id: String?): Effort =
+            entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: NONE
+    }
+}
+
+/**
  * 供应商配置。支持多份并存、随时切换。
  *
  * [apiKeys] 为轮换池（多个 key 依次使用，遇到 429/额度错误自动切下一个），
@@ -34,8 +58,14 @@ data class Provider(
     val maxTokens: Int = 2048,
     /** 额外请求头，一行一个 `Key: Value`。中转站常要求自定义头。 */
     val extraHeaders: String = "",
+    /** 思考强度（归一化档位，按协议翻译成各家字段） */
+    val effort: String = Effort.NONE.id,
+    /** 是否把思考内容回传给模型（多轮时让它记得自己想过什么） */
+    val replayThinking: Boolean = false,
 ) {
     val proto: Protocol get() = Protocol.from(protocol)
+
+    val effortLevel: Effort get() = Effort.from(effort)
 
     /** 实际可用的 key 列表（池优先） */
     val effectiveKeys: List<String>

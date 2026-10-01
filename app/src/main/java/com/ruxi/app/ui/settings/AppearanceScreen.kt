@@ -1,7 +1,5 @@
 package com.ruxi.app.ui.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,8 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,20 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.ruxi.app.data.model.UiSettings
 import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import com.ruxi.app.ui.theme.parseHexColor
 import com.ruxi.app.ui.theme.toHexString
-import java.io.File
 
 /**
- * 外观设置页：自定义背景、主题色、透明度。
+ * 外观设置页：主题色、明暗、字号、气泡。
+ *
+ * ⚠️ 背景图**不在这里** —— 它按角色卡独立（角色卡 → 编辑 → 对话背景）。
  *
  * ## 交互设计上的两个决定
  * 1. **改一下就立刻生效**（不用点保存）。这类视觉参数必须"所见即所得"，
@@ -70,21 +65,7 @@ fun AppearanceScreen(
     settings: UiSettings,
     onBack: () -> Unit,
     onUpdate: (UiSettings) -> Unit,
-    onPickBackground: (android.net.Uri) -> String?,
-    onDeleteBackground: (String) -> Unit,
 ) {
-    val bgPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            onPickBackground(uri)?.let { path ->
-                val old = settings.backgroundImage
-                onUpdate(settings.copy(backgroundImage = path))
-                if (old.isNotBlank()) onDeleteBackground(old)
-            }
-        }
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -221,111 +202,14 @@ fun AppearanceScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ══════════ 自定义背景 ══════════
-            SectionTitle("自定义背景")
-
-            val hasBg = settings.backgroundImage.isNotBlank() &&
-                File(settings.backgroundImage).exists()
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // 预览缩略图
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { bgPicker.launch("image/*") },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (hasBg) {
-                        AsyncImage(
-                            model = File(settings.backgroundImage),
-                            contentDescription = "背景预览",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.Image,
-                            contentDescription = "选择背景",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    TextButton(onClick = { bgPicker.launch("image/*") }) {
-                        Text(
-                            if (hasBg) "更换背景图" else "选择背景图",
-                            color = RuxiColors.accent,
-                        )
-                    }
-                    if (hasBg) {
-                        TextButton(onClick = {
-                            onDeleteBackground(settings.backgroundImage)
-                            onUpdate(settings.copy(backgroundImage = ""))
-                        }) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    "移除背景",
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (hasBg) {
-                Spacer(Modifier.height(10.dp))
-
-                // 压暗
-                SliderRow(
-                    label = "压暗程度",
-                    value = settings.backgroundDim.toFloat(),
-                    range = 0f..90f,
-                    display = "${settings.backgroundDim}%",
-                    onChange = { onUpdate(settings.copy(backgroundDim = it.toInt())) },
-                )
-
-                // 模糊
-                SliderRow(
-                    label = "模糊",
-                    value = settings.backgroundBlur.toFloat(),
-                    range = 0f..40f,
-                    display = "${settings.backgroundBlur}",
-                    onChange = { onUpdate(settings.copy(backgroundBlur = it.toInt())) },
-                )
-
-                // 透明度
-                SliderRow(
-                    label = "背景透明度",
-                    value = settings.backgroundOpacity.toFloat(),
-                    range = 10f..100f,
-                    display = "${settings.backgroundOpacity}%",
-                    onChange = { onUpdate(settings.copy(backgroundOpacity = it.toInt())) },
-                )
-
-                Text(
-                    text = "提示：背景图较花时，把「压暗」调到 50% 以上、「模糊」调到 10 以上，正文会清楚很多。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                )
-            }
+            // 背景图**不在这里** —— 它按角色卡独立配置，
+            // 入口在「角色卡 → 编辑 → 对话背景」。全局只保留与角色无关的项。
+            Text(
+                text = "提示：对话背景图按角色卡独立设置（角色卡 → 编辑 → 对话背景）。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
 
             Spacer(Modifier.height(20.dp))
 
@@ -390,6 +274,18 @@ fun AppearanceScreen(
                 subtitle = "气泡里显示模型吐出的带分隔符原文",
                 checked = settings.showRawText,
                 onChange = { onUpdate(settings.copy(showRawText = it)) },
+            )
+            SettingSwitchRow(
+                title = "显示思考过程",
+                subtitle = "模型支持时，在气泡上方显示它的推理过程",
+                checked = settings.showThinking,
+                onChange = { onUpdate(settings.copy(showThinking = it)) },
+            )
+            SettingSwitchRow(
+                title = "思考默认展开",
+                subtitle = "关闭时思考块折叠，只显示末尾预览",
+                checked = settings.thinkingExpanded,
+                onChange = { onUpdate(settings.copy(thinkingExpanded = it)) },
             )
 
             Spacer(Modifier.height(40.dp))

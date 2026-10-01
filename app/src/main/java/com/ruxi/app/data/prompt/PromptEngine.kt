@@ -113,6 +113,8 @@ object PromptEngine {
         userText: String,
         userImages: List<AttachedImage>,
         settings: PromptSettings,
+        /** 是否把历史里的思考过程也回传给模型（默认否，省 token） */
+        replayThinking: Boolean = false,
     ): BuildResult {
         val sep = settings.separator.ifEmpty { "·" }
         val messages = mutableListOf<ChatMessage>()
@@ -134,7 +136,12 @@ object PromptEngine {
                     ensureSplit(msg.content, sep)
                 else -> msg.content
             }
-            messages += msg.copy(content = content)
+            messages += msg.copy(
+                content = content,
+                // 思考过程默认不回传：它通常很长，且模型并不需要重读自己的旧思路。
+                // 需要时可以开（有些场景确实要求它「记得自己想过什么」）。
+                reasoning = if (replayThinking) msg.reasoning else "",
+            )
         }
 
         // ── 3. 本轮用户输入（首轮时把角色卡图片一并挂上） ──

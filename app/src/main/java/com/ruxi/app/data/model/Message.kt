@@ -21,6 +21,8 @@ data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val role: String,
     val content: String,
+    /** 模型的思考过程（思维链）。与 [content] 分开存，界面单独渲染。 */
+    val reasoning: String = "",
     val images: List<AttachedImage> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     /** 该条是否为失败提示（界面用红色渲染，且不参与后续上下文） */
@@ -30,6 +32,7 @@ data class ChatMessage(
 ) {
     val isUser: Boolean get() = role == Role.USER
     val isAssistant: Boolean get() = role == Role.ASSISTANT
+    val hasReasoning: Boolean get() = reasoning.isNotBlank()
 }
 
 /**

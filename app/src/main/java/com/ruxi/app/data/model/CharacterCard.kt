@@ -29,9 +29,25 @@ data class CharacterCard(
     val hiddenRequirement: String = "",
     val images: List<AttachedImage> = emptyList(),
     val greeting: String = "",
+    // ── 每角色独立的外观（2026-10-01 从全局 UiSettings 挪过来）──
+    //
+    // 为什么该按角色卡分：背景图是**氛围的一部分**。
+    // 一个古风角色配水墨背景、一个赛博角色配霓虹夜景，
+    // 全局一张背景等于强迫所有角色共用一个氛围，那还不如不做这个功能。
+    /** 该角色的对话背景图路径。空 = 用全局默认背景 */
+    val backgroundImage: String = "",
+    /** 背景压暗 0~90（%），字压在图上看不清时调大 */
+    val backgroundDim: Int = 45,
+    /** 背景模糊半径 0~40 */
+    val backgroundBlur: Int = 0,
+    /** 背景透明度 0~100（%） */
+    val backgroundOpacity: Int = 100,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
     /** 卡片是否已配置到可用状态（列表页用来提示「未配置」） */
     val isConfigured: Boolean get() = systemSetting.isNotBlank()
+
+    /** 是否有自定义背景 */
+    val hasBackground: Boolean get() = backgroundImage.isNotBlank()
 }

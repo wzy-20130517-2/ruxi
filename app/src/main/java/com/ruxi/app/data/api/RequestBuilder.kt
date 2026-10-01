@@ -2,6 +2,7 @@ package com.ruxi.app.data.api
 
 import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.ChatMessage
+import com.ruxi.app.data.model.Effort
 import com.ruxi.app.data.model.Protocol
 import com.ruxi.app.data.model.Provider
 import kotlinx.serialization.json.Json
@@ -53,6 +54,17 @@ object RequestBuilder {
             put("stream", stream)
             put("temperature", provider.temperature)
             put("max_tokens", provider.maxTokens)
+
+            // ── 思考强度 ──
+            // OpenAI 系（含 DeepSeek / 多数中转）认 `reasoning_effort`，
+            // 取值 minimal / low / medium / high。关闭时不发这个字段，
+            // 免得某些不支持的后端因为未知字段直接 400。
+            when (provider.effortLevel) {
+                Effort.NONE -> Unit
+                Effort.LOW -> put("reasoning_effort", "low")
+                Effort.MEDIUM -> put("reasoning_effort", "medium")
+                Effort.HIGH -> put("reasoning_effort", "high")
+            }
 
             putJsonArray("messages") {
                 messages.forEach { msg ->
@@ -106,6 +118,22 @@ object RequestBuilder {
             put("temperature", provider.temperature)
             put("max_tokens", provider.maxTokens)
             if (systemText != null) put("system", systemText)
+
+            // ── 思考强度 ──
+            // Anthropic 用 `thinking.budget_tokens`，且**必须小于 max_tokens**，
+            // 否则上游直接报错。所以这里取两者较小值再留点余量给正文。
+            when (val eff = provider.effortLevel) {
+                Effort.NONE -> Unit
+                else -> {
+                    val budget = minOf(eff.budgetTokens, (provider.maxTokens * 0.75f).toInt())
+                    if (budget >= 1024) {
+                        putJsonObject("thinking") {
+                            put("type", "enabled")
+                            put("budget_tokens", budget)
+                        }
+                    }
+                }
+            }
 
             putJsonArray("messages") {
                 turns.forEach { msg ->

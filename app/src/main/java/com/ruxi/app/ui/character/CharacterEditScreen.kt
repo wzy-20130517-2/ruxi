@@ -55,6 +55,9 @@ import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import java.io.File
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material.icons.filled.Delete
 
 /**
  * 角色卡编辑页。
@@ -75,6 +78,10 @@ fun CharacterEditScreen(
     onSave: (CharacterCard) -> Unit,
     onPickImage: (android.net.Uri) -> AttachedImage?,
     onRemoveImage: (String) -> Unit,
+    /** 选背景图，返回落盘路径 */
+    onPickBackground: (android.net.Uri) -> String?,
+    /** 删除背景文件 */
+    onRemoveBackground: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var subtitle by remember { mutableStateOf(initial?.subtitle ?: "") }
@@ -86,6 +93,24 @@ fun CharacterEditScreen(
     var images by remember { mutableStateOf(initial?.images ?: emptyList()) }
     var hiddenExpanded by remember { mutableStateOf(!hidden.isBlank()) }
     var noteEditing by remember { mutableStateOf<AttachedImage?>(null) }
+
+    // 对话背景（按角色卡独立）
+    var bgPath by remember { mutableStateOf(initial?.backgroundImage ?: "") }
+    var bgDim by remember { mutableStateOf(initial?.backgroundDim ?: 45) }
+    var bgBlur by remember { mutableStateOf(initial?.backgroundBlur ?: 0) }
+    var bgOpacity by remember { mutableStateOf(initial?.backgroundOpacity ?: 100) }
+
+    val bgPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            onPickBackground(uri)?.let { newPath ->
+                val old = bgPath
+                bgPath = newPath
+                if (old.isNotBlank()) onRemoveBackground(old)
+            }
+        }
+    }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -129,6 +154,10 @@ fun CharacterEditScreen(
                                 hiddenRequirement = hidden,
                                 greeting = greeting,
                                 images = images,
+                                backgroundImage = bgPath,
+                                backgroundDim = bgDim,
+                                backgroundBlur = bgBlur,
+                                backgroundOpacity = bgOpacity,
                             )
                             onSave(card)
                         },
@@ -372,6 +401,102 @@ fun CharacterEditScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
 
+            // ── 对话背景（按角色卡独立） ──
+            SectionTitle("对话背景（仅这个角色）")
+
+            val hasBg = bgPath.isNotBlank() && File(bgPath).exists()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { bgPicker.launch("image/*") },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (hasBg) {
+                        AsyncImage(
+                            model = File(bgPath),
+                            contentDescription = "背景预览",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Image,
+                            contentDescription = "选择背景",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    TextButton(onClick = { bgPicker.launch("image/*") }) {
+                        Text(
+                            if (hasBg) "更换背景图" else "选择背景图",
+                            color = RuxiColors.accent,
+                        )
+                    }
+                    if (hasBg) {
+                        TextButton(onClick = {
+                            onRemoveBackground(bgPath)
+                            bgPath = ""
+                        }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "移除背景",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (hasBg) {
+                Spacer(Modifier.height(8.dp))
+                BgSliderRow(
+                    label = "压暗程度",
+                    value = bgDim.toFloat(),
+                    range = 0f..90f,
+                    display = "$bgDim%",
+                    onChange = { bgDim = it.toInt() },
+                )
+                BgSliderRow(
+                    label = "模糊",
+                    value = bgBlur.toFloat(),
+                    range = 0f..40f,
+                    display = "$bgBlur",
+                    onChange = { bgBlur = it.toInt() },
+                )
+                BgSliderRow(
+                    label = "透明度",
+                    value = bgOpacity.toFloat(),
+                    range = 10f..100f,
+                    display = "$bgOpacity%",
+                    onChange = { bgOpacity = it.toInt() },
+                )
+                Text(
+                    text = "背景较花时把「压暗」调到 50% 以上、「模糊」调到 10 以上，正文会清楚很多。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = {
@@ -384,6 +509,10 @@ fun CharacterEditScreen(
                         hiddenRequirement = hidden,
                         greeting = greeting,
                         images = images,
+                        backgroundImage = bgPath,
+                        backgroundDim = bgDim,
+                        backgroundBlur = bgBlur,
+                        backgroundOpacity = bgOpacity,
                     )
                     onSave(card)
                 },
@@ -439,6 +568,42 @@ fun CharacterEditScreen(
             dismissButton = {
                 TextButton(onClick = { noteEditing = null }) { Text("取消") }
             },
+        )
+    }
+}
+
+/** 带标签与数值回显的滑块行（角色编辑页背景调节用） */
+@Composable
+private fun BgSliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    display: String,
+    onChange: (Float) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = display,
+                style = MaterialTheme.typography.bodySmall,
+                color = RuxiColors.accent,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            colors = SliderDefaults.colors(
+                thumbColor = RuxiColors.accent,
+                activeTrackColor = RuxiColors.accent,
+            ),
         )
     }
 }

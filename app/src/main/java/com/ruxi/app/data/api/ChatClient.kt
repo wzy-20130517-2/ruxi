@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -154,12 +155,18 @@ class ChatClient {
         awaitClose { runCatching { call?.cancel() } }
     }.flowOn(Dispatchers.IO)
 
-    /** 非流式的连通性测试。返回 (是否成功, 说明文本) */
-    suspend fun test(provider: Provider): Pair<Boolean, String> {
+    /**
+     * 非流式的连通性测试。返回 (是否成功, 说明文本)
+     *
+     * ⚠️ 必须 withContext(Dispatchers.IO)：`suspend` **不会**自动切线程，
+     * 调用方通常在 rememberCoroutineScope()（主线程调度器）里调用它，
+     * 直接 execute() 会抛 NetworkOnMainThreadException。
+     */
+    suspend fun test(provider: Provider): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val key = provider.effectiveKeys.firstOrNull().orEmpty()
-        if (key.isBlank()) return false to "未配置 API Key"
+        if (key.isBlank()) return@withContext false to "未配置 API Key"
 
-        return try {
+        try {
             val body = RequestBuilder.buildBody(
                 provider,
                 listOf(ChatMessage(role = "user", content = "hi")),
@@ -187,48 +194,49 @@ class ChatClient {
      * 注意：不是所有中转站都实现 /models，有些会返回 404 或空数组。
      * 这不算错误 —— 调用方应该让用户仍能手动输入模型名。
      */
-    suspend fun listModels(provider: Provider): Pair<List<String>, String?> {
-        val key = provider.effectiveKeys.firstOrNull().orEmpty()
-        if (key.isBlank()) return emptyList<String>() to "未配置 API Key"
+    suspend fun listModels(provider: Provider): Pair<List<String>, String?> =
+        withContext(Dispatchers.IO) {
+            val key = provider.effectiveKeys.firstOrNull().orEmpty()
+            if (key.isBlank()) return@withContext emptyList<String>() to "未配置 API Key"
 
-        val base = provider.normalizedBase()
-        // Anthropic 的模型列表端点与 OpenAI 不同；且不少中转站只实现了 OpenAI 那个。
-        // 统一先试 OpenAI 风格，失败再试 anthropic 风格。
-        val candidates = when (provider.proto) {
-            Protocol.OPENAI -> listOf("$base/models")
-            Protocol.ANTHROPIC -> listOf("$base/models", "$base/v1/models")
-        }
-
-        var lastError: String? = null
-        for (url in candidates.distinct()) {
-            try {
-                val builder = Request.Builder().url(url).get()
-                when (provider.proto) {
-                    Protocol.OPENAI -> builder.header("Authorization", "Bearer $key")
-                    Protocol.ANTHROPIC -> {
-                        builder.header("x-api-key", key)
-                        builder.header("anthropic-version", "2023-06-01")
-                    }
-                }
-                RequestBuilder.parseExtraHeaders(provider.extraHeaders).forEach { (k, v) ->
-                    runCatching { builder.header(k, v) }
-                }
-
-                normalClient.newCall(builder.build()).execute().use { resp ->
-                    val text = runCatching { resp.body?.string().orEmpty() }.getOrDefault("")
-                    if (!resp.isSuccessful) {
-                        lastError = describeHttpError(resp.code, text)
-                        return@use
-                    }
-                    val ids = parseModelIds(text)
-                    if (ids.isNotEmpty()) return ids to null
-                    lastError = "服务器返回的模型列表是空的"
-                }
-            } catch (e: Exception) {
-                lastError = friendlyMessage(e)
+            val base = provider.normalizedBase()
+            // Anthropic 的模型列表端点与 OpenAI 不同；且不少中转站只实现了 OpenAI 那个。
+            // 统一先试 OpenAI 风格，失败再试 anthropic 风格。
+            val candidates = when (provider.proto) {
+                Protocol.OPENAI -> listOf("$base/models")
+                Protocol.ANTHROPIC -> listOf("$base/models", "$base/v1/models")
             }
-        }
-        return emptyList<String>() to (lastError ?: "无法获取模型列表")
+
+            var lastError: String? = null
+            for (url in candidates.distinct()) {
+                try {
+                    val builder = Request.Builder().url(url).get()
+                    when (provider.proto) {
+                        Protocol.OPENAI -> builder.header("Authorization", "Bearer $key")
+                        Protocol.ANTHROPIC -> {
+                            builder.header("x-api-key", key)
+                            builder.header("anthropic-version", "2023-06-01")
+                        }
+                    }
+                    RequestBuilder.parseExtraHeaders(provider.extraHeaders).forEach { (k, v) ->
+                        runCatching { builder.header(k, v) }
+                    }
+
+                    normalClient.newCall(builder.build()).execute().use { resp ->
+                        val text = runCatching { resp.body?.string().orEmpty() }.getOrDefault("")
+                        if (!resp.isSuccessful) {
+                            lastError = describeHttpError(resp.code, text)
+                            return@use
+                        }
+                        val ids = parseModelIds(text)
+                        if (ids.isNotEmpty()) return@withContext ids to null
+                        lastError = "服务器返回的模型列表是空的"
+                    }
+                } catch (e: Exception) {
+                    lastError = friendlyMessage(e)
+                }
+            }
+            return@withContext emptyList<String>() to (lastError ?: "无法获取模型列表")
     }
 
     /**

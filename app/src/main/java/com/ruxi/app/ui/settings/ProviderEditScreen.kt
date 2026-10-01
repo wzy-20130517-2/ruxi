@@ -40,7 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ruxi.app.data.model.Protocol
 import com.ruxi.app.data.model.Provider
-import com.ruxi.app.ui.character.RuxiTextField
+import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 

@@ -168,7 +168,9 @@ class AppStore private constructor(context: Context) {
     /** 新建会话（可选注入开场白） */
     fun createSession(characterId: String): Session {
         val card = characterById(characterId)
-        val greeting = card?.greeting?.orEmpty()
+        // ⚠️ 不能写 `card?.greeting?.orEmpty()` —— 整条可空链的结果仍是 String?，
+        // 传给非空的 content 会编译失败。用 `?: ""` 才能收窄成 String。
+        val greeting: String = card?.greeting ?: ""
         val session = Session(
             characterId = characterId,
             title = card?.name ?: "新对话",

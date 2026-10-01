@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ruxi.app.data.model.UiSettings
+import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import com.ruxi.app.ui.theme.parseHexColor

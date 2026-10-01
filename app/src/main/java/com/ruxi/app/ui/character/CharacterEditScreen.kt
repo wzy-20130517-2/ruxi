@@ -31,7 +31,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.CharacterCard
+import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import java.io.File
@@ -441,26 +441,4 @@ fun CharacterEditScreen(
             },
         )
     }
-}
-
-/** 统一样式的输入框，避免每处重复写一堆参数 */
-@Composable
-fun RuxiTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = false,
-    minLines: Int = 1,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label, style = MaterialTheme.typography.bodySmall) },
-        singleLine = singleLine,
-        minLines = if (singleLine) 1 else minLines,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        textStyle = MaterialTheme.typography.bodyMedium,
-    )
 }

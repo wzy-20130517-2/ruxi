@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -102,6 +103,10 @@ fun BackgroundLayer(
                                     blurPx.toFloat(),
                                     Shader.TileMode.CLAMP,
                                 )
+                                // Compose 官方扩展函数：把 android.graphics.RenderEffect
+                                // 转成 compose 的 RenderEffect。
+                                // ⚠️ 不要自己写 `RenderEffect(x)` —— compose 那个类的
+                                // 构造函数是 protected，只能通过这个扩展转。
                                 .asComposeRenderEffect()
                         }
                     } else Modifier
@@ -120,7 +125,3 @@ fun BackgroundLayer(
             )
     )
 }
-
-/** RenderEffect -> Compose RenderEffect 的桥接 */
-private fun android.graphics.RenderEffect.asComposeRenderEffect() =
-    androidx.compose.ui.graphics.RenderEffect(this)

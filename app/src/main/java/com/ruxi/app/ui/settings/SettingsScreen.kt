@@ -55,8 +55,8 @@ import com.ruxi.app.data.api.ChatClient
 import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.UiSettings
-import com.ruxi.app.ui.character.RuxiTextField
 import com.ruxi.app.ui.components.Pill
+import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import kotlinx.coroutines.launch

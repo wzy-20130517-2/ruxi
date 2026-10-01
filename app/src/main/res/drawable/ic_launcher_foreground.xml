@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 前景：一张戏面具的抽象轮廓 + 对话气泡尾，暗合「如戏」= 角色扮演 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 面具主体 -->
+    <path
+        android:pathData="M54,30 C68,30 76,36 76,46 C76,62 68,76 54,80 C40,76 32,62 32,46 C32,36 40,30 54,30 Z"
+        android:fillColor="#FFF3E9FF" />
+
+    <!-- 左眼 -->
+    <path
+        android:pathData="M44,46 m-4.5,0 a4.5,5 0 1,0 9,0 a4.5,5 0 1,0 -9,0"
+        android:fillColor="#FF6D3FCF" />
+
+    <!-- 右眼 -->
+    <path
+        android:pathData="M64,46 m-4.5,0 a4.5,5 0 1,0 9,0 a4.5,5 0 1,0 -9,0"
+        android:fillColor="#FF6D3FCF" />
+
+    <!-- 微笑唇线 -->
+    <path
+        android:pathData="M45,62 Q54,69 63,62"
+        android:strokeColor="#FFB79BE8"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round" />
+</vector>

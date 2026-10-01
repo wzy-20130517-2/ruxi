@@ -41,11 +41,7 @@ class AppStore private constructor(context: Context) {
     val providers: StateFlow<List<Provider>> = _providers.asStateFlow()
 
     private val _activeProviderId = MutableStateFlow(
-        prefs.read(
-            PrefsStore.KEY_ACTIVE_PROVIDER,
-            kotlinx.serialization.builtins.serializer<String>(),
-            ""
-        )
+        prefs.readString(PrefsStore.KEY_ACTIVE_PROVIDER, "")
     )
     val activeProviderId: StateFlow<String> = _activeProviderId.asStateFlow()
 
@@ -126,11 +122,7 @@ class AppStore private constructor(context: Context) {
 
     fun setActiveProvider(id: String) {
         _activeProviderId.value = id
-        prefs.write(
-            PrefsStore.KEY_ACTIVE_PROVIDER,
-            kotlinx.serialization.builtins.serializer<String>(),
-            id
-        )
+        prefs.writeString(PrefsStore.KEY_ACTIVE_PROVIDER, id)
     }
 
     fun activeProvider(): Provider? =
@@ -207,6 +199,9 @@ class AppStore private constructor(context: Context) {
 
     fun importImage(uri: android.net.Uri): com.ruxi.app.data.model.AttachedImage? =
         imageStore.import(appContext, uri)?.let { com.ruxi.app.data.model.AttachedImage(path = it) }
+
+    /** 只返回落盘路径（背景图这类不需要 AttachedImage 包装的场景） */
+    fun importImageFile(uri: android.net.Uri): String? = imageStore.import(appContext, uri)
 
     fun importImages(uris: List<android.net.Uri>): List<com.ruxi.app.data.model.AttachedImage> =
         imageStore.importAll(appContext, uris)

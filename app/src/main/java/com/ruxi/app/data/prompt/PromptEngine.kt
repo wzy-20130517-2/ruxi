@@ -66,11 +66,13 @@ object PromptEngine {
     fun restore(text: String, sep: String): String {
         if (text.isEmpty() || sep.isEmpty()) return text
         val escaped = Regex.escape(sep)
-        // 先吞掉分隔符两侧的空白（模型常写成 `你· 好` 或 `你 · 好`）
-        var out = text.replace(Regex("\\s*$escaped\\s*"), sep)
+        // ⚠️ 这里必须用 [ \t] 而不是 \s —— \s 包含 \n，
+        // 会把「你·\n好」中间的换行一起吞掉，导致段落被拼成一行。
+        // 换行是结构信息，还原时只能清掉它旁边的分隔符，不能清掉换行本身。
+        var out = text.replace(Regex("[ \t]*$escaped[ \t]*"), sep)
         // 连续分隔符压成一个
         out = out.replace(Regex("(?:$escaped)+"), sep)
-        // 换行/行首/行尾残留的分隔符清掉
+        // 行首/行尾/换行处残留的分隔符清掉
         out = out.replace(Regex("^$escaped"), "")
         out = out.replace(Regex("$escaped$"), "")
         out = out.replace(Regex("$escaped\\n"), "\n")
@@ -135,32 +137,31 @@ object PromptEngine {
             messages += msg.copy(content = content)
         }
 
-        // ── 3. 本轮用户输入 ──
-        val outContent = if (settings.splitUser && userText.isNotBlank()) {
+        // ── 3. 本轮用户输入（首轮时把角色卡图片一并挂上） ──
+        //
+        // ⚠️ 图片**不能**作为单独一条 user 消息插进来。
+        // Anthropic 协议硬性要求 user/assistant 严格交替，
+        // 两条连续的 user 消息会被直接拒绝（"roles must alternate"）。
+        // 所以把图片和备注合并进本轮这条消息里。
+        val injectCardImages = !session.injectedImages && card.images.isNotEmpty()
+
+        val textPart = if (settings.splitUser && userText.isNotBlank()) {
             ensureSplit(userText, sep)
         } else {
             userText
         }
+        val notePart = if (injectCardImages) buildImageNote(card.images, sep, settings) else ""
+
+        val combinedText = listOf(notePart, textPart)
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
+
         messages += ChatMessage(
             role = Role.USER,
-            content = outContent,
-            images = userImages,
+            content = combinedText,
+            // 角色卡图片 + 用户本轮图片，合并成一条消息的附件
+            images = (if (injectCardImages) card.images else emptyList()) + userImages,
         )
-
-        // ── 4. 首轮图片注入 ──
-        // 只有在「还没注入过」且「会话是空的（本轮是第一条用户消息）」时才带图。
-        // 注入方式：把图片挂在系统消息之后的一条 user 消息上，备注作为文本前缀。
-        if (!session.injectedImages && card.images.isNotEmpty() && session.messages.isEmpty()) {
-            val noteText = buildImageNote(card.images, sep, settings)
-            val injectMsg = ChatMessage(
-                role = Role.USER,
-                content = noteText,
-                images = card.images,
-            )
-            // 插到 system 之后、本轮用户消息之前
-            val insertAt = if (messages.isNotEmpty() && messages[0].role == Role.SYSTEM) 1 else 0
-            messages.add(insertAt, injectMsg)
-        }
 
         return BuildResult(
             messages = messages,

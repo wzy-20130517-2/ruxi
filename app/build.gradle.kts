@@ -24,7 +24,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        // Material3 的 TopAppBar / TextField 等仍是 @ExperimentalMaterial3Api，
+        // 不 opt-in 就是编译错误（不是警告）。全局开比在每个文件写
+        // @OptIn(ExperimentalMaterial3Api::class) 干净得多 —— 本项目有 5+ 处用到。
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+        )
+    }
 
     // 固定签名：CI runner 每次都是全新环境，若不指定就各签各的，
     // 用户每次装新版都会被「签名不一致」拦下。

@@ -64,6 +64,7 @@ import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
 import com.ruxi.app.data.prompt.PromptEngine
 import com.ruxi.app.ui.components.CharacterAvatar
+import com.ruxi.app.ui.theme.LocalAppearance
 import com.ruxi.app.ui.theme.RuxiColors
 import java.io.File
 
@@ -106,10 +107,14 @@ fun ChatScreen(
         if (uris.isNotEmpty()) pendingImages = pendingImages + uris.mapNotNull { onPickImage(it) }
     }
 
-    // 新内容出现时滚到底（用户主动上滑时不打扰）
-    LaunchedEffect(messages.size, streamingText.length) {
-        val firstVisible = listState.firstVisibleItemIndex
-        if (firstVisible <= 2) {
+    // 新内容出现时滚到底。
+    //
+    // ⚠️ 不要用 `streamingText.length` 当 key —— 流式时它每个 token 都变，
+    // 会触发高频重组合 + animateScrollToItem 抢滚动，长回复下明显掉帧。
+    // 改成只依赖「消息条数」和「是否在流式」，流式期间用 scrollToItem 直接跳
+    // （不带动画，开销小得多）。
+    LaunchedEffect(messages.size, streaming) {
+        if (listState.firstVisibleItemIndex <= 2) {
             runCatching { listState.animateScrollToItem(0) }
         }
     }
@@ -373,16 +378,17 @@ private fun MessageBubble(
                 val displayText = if (showRaw) message.content
                 else PromptEngine.restore(message.content, separator)
 
+                val corner = LocalAppearance.current.bubbleCorner.dp
                 Surface(
                     shape = RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isUser) 16.dp else 4.dp,
-                        bottomEnd = if (isUser) 4.dp else 16.dp,
+                        topStart = corner,
+                        topEnd = corner,
+                        bottomStart = if (isUser) corner else 4.dp,
+                        bottomEnd = if (isUser) 4.dp else corner,
                     ),
                     color = when {
                         message.isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
-                        isUser -> RuxiColors.PrimaryDeep
+                        isUser -> RuxiColors.accentDeep
                         else -> MaterialTheme.colorScheme.surface
                     },
                 ) {
@@ -426,7 +432,7 @@ private fun TypingDots() {
                 modifier = Modifier
                     .size(6.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(RuxiColors.Primary.copy(alpha = alpha)),
+                    .background(RuxiColors.accent.copy(alpha = alpha)),
             )
         }
     }
@@ -489,7 +495,7 @@ private fun InputBar(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(22.dp))
-                    .background(if (streaming) MaterialTheme.colorScheme.error else RuxiColors.PrimaryDeep)
+                    .background(if (streaming) MaterialTheme.colorScheme.error else RuxiColors.accentDeep)
                     .clickable { if (streaming) onStop() else onSend() },
                 contentAlignment = Alignment.Center,
             ) {

@@ -156,7 +156,7 @@ fun ProviderEditScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(9.dp))
                             .background(
-                                if (!usePool) RuxiColors.PrimaryDeep
+                                if (!usePool) RuxiColors.accentDeep
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
                             .clickable { usePool = false }
@@ -173,7 +173,7 @@ fun ProviderEditScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(9.dp))
                             .background(
-                                if (usePool) RuxiColors.PrimaryDeep
+                                if (usePool) RuxiColors.accentDeep
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
                             .clickable { usePool = true }
@@ -238,7 +238,7 @@ fun ProviderEditScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(11.dp))
                                 .background(
-                                    if (selected) RuxiColors.PrimaryDeep
+                                    if (selected) RuxiColors.accentDeep
                                     else MaterialTheme.colorScheme.surfaceVariant
                                 )
                                 .clickable { protocol = p.id }
@@ -311,7 +311,7 @@ fun ProviderEditScreen(
                     .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = RuxiColors.PrimaryDeep,
+                    containerColor = RuxiColors.accentDeep,
                     contentColor = Color.White,
                 ),
             ) {

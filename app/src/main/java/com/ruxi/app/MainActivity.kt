@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
         val store = AppStore.get(this)
         setContent {
             val uiSettings by store.uiSettings.collectAsState()
-            RuxiTheme(themeMode = uiSettings.themeMode) {
+            RuxiTheme(settings = uiSettings) {
                 RuxiAppRoot(store)
             }
         }

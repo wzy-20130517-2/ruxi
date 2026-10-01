@@ -136,7 +136,7 @@ fun CharacterEditScreen(
                     ) {
                         Text(
                             "保存",
-                            color = if (systemSetting.isNotBlank()) RuxiColors.Primary
+                            color = if (systemSetting.isNotBlank()) RuxiColors.accent
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium,
                         )
@@ -243,7 +243,7 @@ fun CharacterEditScreen(
                     Text(
                         text = if (hiddenExpanded) "收起" else "展开",
                         style = MaterialTheme.typography.labelMedium,
-                        color = RuxiColors.Primary,
+                        color = RuxiColors.accent,
                     )
                 }
                 if (hiddenExpanded) {
@@ -270,7 +270,7 @@ fun CharacterEditScreen(
                     }
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = { hidden = defaultHidden }) {
-                        Text("填入全局模板（再自行修改）", color = RuxiColors.Primary)
+                        Text("填入全局模板（再自行修改）", color = RuxiColors.accent)
                     }
                 }
             }
@@ -394,7 +394,7 @@ fun CharacterEditScreen(
                     .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = RuxiColors.PrimaryDeep,
+                    containerColor = RuxiColors.accentDeep,
                     contentColor = Color.White,
                 ),
             ) {

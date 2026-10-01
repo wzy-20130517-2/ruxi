@@ -80,6 +80,7 @@ fun SettingsScreen(
     onSelectProvider: (String) -> Unit,
     onUpdatePrompt: (PromptSettings) -> Unit,
     onUpdateUi: (UiSettings) -> Unit,
+    onOpenAppearance: () -> Unit,
 ) {
     var testing by remember { mutableStateOf<String?>(null) }
     var testResult by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -127,7 +128,7 @@ fun SettingsScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (isActive) RuxiColors.PrimaryDeep.copy(alpha = 0.16f)
+                            if (isActive) RuxiColors.accentDeep.copy(alpha = 0.16f)
                             else MaterialTheme.colorScheme.surface
                         )
                         .clickable { onSelectProvider(p.id) }
@@ -148,7 +149,7 @@ fun SettingsScreen(
                                 Icon(
                                     Icons.Default.Check,
                                     contentDescription = "当前使用",
-                                    tint = RuxiColors.Primary,
+                                    tint = RuxiColors.accent,
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
@@ -184,7 +185,7 @@ fun SettingsScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 2.dp,
-                                color = RuxiColors.Primary,
+                                color = RuxiColors.accent,
                             )
                         } else {
                             Icon(
@@ -280,7 +281,7 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.padding(start = 8.dp),
             ) {
-                Text("填入内置默认模板", color = RuxiColors.Primary)
+                Text("填入内置默认模板", color = RuxiColors.accent)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -288,33 +289,35 @@ fun SettingsScreen(
             // ═══════ 外观 ═══════
             SectionTitle("外观")
             Column(Modifier.padding(horizontal = 16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        UiSettings.THEME_DARK to "深色",
-                        UiSettings.THEME_LIGHT to "浅色",
-                        UiSettings.THEME_SYSTEM to "跟随系统",
-                    ).forEach { (mode, label) ->
-                        val selected = uiSettings.themeMode == mode
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(11.dp))
-                                .background(
-                                    if (selected) RuxiColors.PrimaryDeep
-                                    else MaterialTheme.colorScheme.surfaceVariant
-                                )
-                                .clickable { onUpdateUi(uiSettings.copy(themeMode = mode)) }
-                                .padding(vertical = 11.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                // 外观细节（主题色/背景/字号）在独立页 —— 参数太多，塞这里会淹掉别的设置
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable(onClick = onOpenAppearance)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "主题色 · 背景 · 字号",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "自定义背景图、主题颜色、透明度等",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
+                    Text(
+                        text = "›",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = RuxiColors.accent,
+                    )
                 }
+
                 Spacer(Modifier.height(12.dp))
                 SettingSwitch(
                     title = "显示原始输出",

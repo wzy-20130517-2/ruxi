@@ -110,7 +110,7 @@ fun EmptyState(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = RuxiColors.Primary.copy(alpha = 0.75f),
+                tint = RuxiColors.accent.copy(alpha = 0.75f),
                 modifier = Modifier.size(32.dp),
             )
         }
@@ -164,7 +164,7 @@ private val RuxiGradientsPrimary = Brush.verticalGradient(
 @Composable
 fun Pill(
     text: String,
-    color: Color = RuxiColors.Primary,
+    color: Color = RuxiColors.accent,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {

@@ -44,6 +44,20 @@ class PrefsStore(context: Context) {
         }
     }
 
+    // ── 纯字符串读写 ──
+    //
+    // 不走 kotlinx.serialization：`String.serializer()` 在 Kotlin 2.1 上
+    // 无法从 `kotlinx.serialization.builtins.serializer` 解析出来（实测 CI 报
+    // "Unresolved reference 'serializer'"），而且它失败时会把泛型 T 推断成
+    // String?，让调用处报一堆莫名其妙的 nullable 错误。
+    // SharedPreferences 本来就原生支持字符串，没必要绕一圈。
+    fun readString(key: String, default: String = ""): String =
+        prefs.getString(key, default) ?: default
+
+    fun writeString(key: String, value: String) {
+        prefs.edit().putString(key, value).apply()
+    }
+
     fun remove(key: String) {
         prefs.edit().remove(key).apply()
     }

@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import com.ruxi.app.data.api.ChatClient
 import com.ruxi.app.data.api.StreamEvent
 import com.ruxi.app.data.model.AttachedImage
@@ -26,6 +25,7 @@ import com.ruxi.app.data.store.AppStore
 import com.ruxi.app.ui.character.CharacterEditScreen
 import com.ruxi.app.ui.chat.ChatScreen
 import com.ruxi.app.ui.home.HomeScreen
+import com.ruxi.app.ui.settings.AppearanceScreen
 import com.ruxi.app.ui.settings.ProviderEditScreen
 import com.ruxi.app.ui.settings.SettingsScreen
 import kotlinx.coroutines.Job
@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 sealed interface Route {
     data object Home : Route
     data object Settings : Route
+    data object Appearance : Route
     data class CharacterEdit(val id: String?) : Route
     data class ProviderEdit(val id: String?) : Route
     data class Chat(val characterId: String, val sessionId: String) : Route
@@ -55,7 +56,6 @@ sealed interface Route {
  */
 @Composable
 fun RuxiAppRoot(store: AppStore) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val characters by store.characters.collectAsState()
@@ -78,9 +78,15 @@ fun RuxiAppRoot(store: AppStore) {
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        // 背景改由 BackgroundLayer 提供，这里用透明色透出去
+        color = androidx.compose.ui.graphics.Color.Transparent,
     ) {
-        when (val r = route) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            com.ruxi.app.ui.components.BackgroundLayer(
+                settings = uiSettings,
+                isDark = uiSettings.themeMode != "light",
+            )
+            when (val r = route) {
             Route.Home -> HomeScreen(
                 characters = characters,
                 onOpenCharacter = { id ->
@@ -115,6 +121,15 @@ fun RuxiAppRoot(store: AppStore) {
                 onSelectProvider = { store.setActiveProvider(it) },
                 onUpdatePrompt = { store.updatePromptSettings(it) },
                 onUpdateUi = { store.updateUiSettings(it) },
+                onOpenAppearance = { route = Route.Appearance },
+            )
+
+            Route.Appearance -> AppearanceScreen(
+                settings = uiSettings,
+                onBack = { route = Route.Settings },
+                onUpdate = { store.updateUiSettings(it) },
+                onPickBackground = { uri -> store.importImageFile(uri) },
+                onDeleteBackground = { path -> store.deleteImageFile(path) },
             )
 
             is Route.ProviderEdit -> {
@@ -284,6 +299,7 @@ fun RuxiAppRoot(store: AppStore) {
                         },
                     )
                 }
+            }
             }
         }
     }

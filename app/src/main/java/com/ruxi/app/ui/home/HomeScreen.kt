@@ -77,7 +77,7 @@ fun HomeScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onCreateCharacter,
-                containerColor = RuxiColors.PrimaryDeep,
+                containerColor = RuxiColors.accentDeep,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(18.dp),
             ) {

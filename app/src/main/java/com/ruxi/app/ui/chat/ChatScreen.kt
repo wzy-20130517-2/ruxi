@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
@@ -112,6 +113,13 @@ fun ChatScreen(
     onEditCharacter: () -> Unit,
     onOpenProviderSettings: () -> Unit,
     onPickImage: (android.net.Uri) -> AttachedImage?,
+    /** 点「帮我回复」 */
+    onAssistReply: () -> Unit,
+    /** 正在生成「帮我回复」 */
+    assisting: Boolean,
+    /** 生成好的内容（消费后由 onAssistDraftConsumed 清空） */
+    assistDraft: String?,
+    onAssistDraftConsumed: () -> Unit,
 
     // ── 消息操作 ──
     editingMessageId: String?,
@@ -128,6 +136,16 @@ fun ChatScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
+
+    // 收到「帮我回复」的结果 → 填进输入框。
+    // 用 LaunchedEffect 而不是直接在组合里赋值：组合函数可能因任何状态变化重跑，
+    // 直接赋值会把用户正在打的字反复覆盖掉。
+    LaunchedEffect(assistDraft) {
+        assistDraft?.let {
+            input = it
+            onAssistDraftConsumed()
+        }
+    }
     var pendingImages by remember { mutableStateOf(emptyList<AttachedImage>()) }
     var menuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -308,6 +326,8 @@ fun ChatScreen(
                 },
                 onStop = onStop,
                 onPickImage = { imagePicker.launch("image/*") },
+                onAssistReply = onAssistReply,
+                assisting = assisting,
             )
         }
     }
@@ -686,6 +706,10 @@ private fun InputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onPickImage: () -> Unit,
+    /** 点「帮我回复」：让模型以用户身份写一句话，结果填进输入框 */
+    onAssistReply: () -> Unit,
+    /** 正在生成「帮我回复」 */
+    assisting: Boolean,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -704,6 +728,25 @@ private fun InputBar(
                     contentDescription = "发送图片",
                     tint = if (streaming) RuxiColors.TextTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            // 「帮我回复」：以用户身份写一句话。
+            // 结果**填进输入框**而不是直接发送 —— 用户可能想改两个字再发，
+            // 直接发出去就没得改了（而且这是模型揣测用户想说什么，必须给确认机会）。
+            IconButton(onClick = onAssistReply, enabled = !streaming && !assisting) {
+                if (assisting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = RuxiColors.accent,
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.AutoFixHigh,
+                        contentDescription = "帮我回复",
+                        tint = if (streaming) RuxiColors.TextTertiary else RuxiColors.accent,
+                    )
+                }
             }
 
             TextField(

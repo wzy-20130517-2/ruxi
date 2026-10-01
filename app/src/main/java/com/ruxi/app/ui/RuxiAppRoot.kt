@@ -182,6 +182,10 @@ fun RuxiAppRoot(store: AppStore) {
     var editDraft by remember { mutableStateOf("") }
     // 长按弹出的操作菜单目标
     var actionTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    // 「帮我回复」正在生成中
+    var assisting by remember { mutableStateOf(false) }
+    // 生成好的内容，交给输入框（由 ChatScreen 消费后清空）
+    var assistDraft by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -392,6 +396,56 @@ fun RuxiAppRoot(store: AppStore) {
                         },
                         onOpenProviderSettings = { route = Route.ProviderSettings },
                         onPickImage = { uri -> store.importImage(uri) },
+                        assisting = assisting,
+                        onAssistReply = {
+                            val provider = store.activeProvider()
+                            if (provider == null) {
+                                errorText = "还没有配置供应商"
+                            } else if (provider.effectiveKeys.isEmpty()) {
+                                errorText = "当前供应商没有填 API Key"
+                            } else if (streaming) {
+                                errorText = "正在回复中，稍等一下"
+                            } else {
+                                errorText = null
+                                assisting = true
+                                scope.launch {
+                                    // 「帮我回复」是**一次性短请求**，不用流式：
+                                    // 它只输出一句话，等它完整回来再填进输入框更简单可靠
+                                    // （流式反而要处理"边生成边改输入框"的闪烁）。
+                                    val messages = PromptEngine.buildAssistReply(
+                                        card = card,
+                                        session = store.sessionById(session.id) ?: session,
+                                        settings = promptSettings,
+                                    )
+                                    val sb = StringBuilder()
+                                    try {
+                                        ChatClient.get().stream(provider, messages)
+                                            .collect { ev ->
+                                                when (ev) {
+                                                    is StreamEvent.Delta -> sb.append(ev.text)
+                                                    else -> Unit
+                                                }
+                                            }
+                                    } catch (e: Exception) {
+                                        errorText = "生成失败：${e.message}"
+                                    }
+                                    assisting = false
+                                    // 清掉可能残留的分隔符（这轮不该带）
+                                    val text = PromptEngine
+                                        .restore(sb.toString(), promptSettings.separator.ifEmpty { "·" })
+                                        .trim()
+                                        .trim('"', '「', '」', '“', '”', '\'', '：', ':')
+                                        .trim()
+                                    if (text.isNotBlank()) {
+                                        assistDraft = text
+                                    } else {
+                                        errorText = "没能生成内容，再试一次？"
+                                    }
+                                }
+                            }
+                        },
+                        assistDraft = assistDraft,
+                        onAssistDraftConsumed = { assistDraft = null },
 
                         // ── 消息操作（长按触发）──
                         editingMessageId = editingMessageId,

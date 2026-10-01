@@ -160,6 +160,52 @@ class AppStore private constructor(context: Context) {
         upsertSession(session.copy(messages = msgs))
     }
 
+    /**
+     * 就地修改某条消息。
+     *
+     * [transform] 拿到旧消息返回新消息 —— 用变换函数而不是直接传新对象，
+     * 是为了让调用方不必自己拼一份完整副本（容易漏字段，比如 id/timestamp）。
+     */
+    fun updateMessage(
+        sessionId: String,
+        messageId: String,
+        transform: (com.ruxi.app.data.model.ChatMessage) -> com.ruxi.app.data.model.ChatMessage,
+    ) {
+        val session = sessionById(sessionId) ?: return
+        val msgs = session.messages.map { if (it.id == messageId) transform(it) else it }
+        upsertSession(session.copy(messages = msgs))
+    }
+
+    /** 删除单条消息 */
+    fun deleteMessage(sessionId: String, messageId: String) {
+        val session = sessionById(sessionId) ?: return
+        // 顺带删掉它附带的图片文件（否则私有目录会越积越多）
+        session.messages.firstOrNull { it.id == messageId }
+            ?.images?.forEach { imageStore.delete(it.path) }
+        upsertSession(session.copy(messages = session.messages.filterNot { it.id == messageId }))
+    }
+
+    /**
+     * 从某条消息起**截断**（含该条）。
+     *
+     * 「重新回复」用的就是它：删掉那条 assistant 及其之后的全部消息，
+     * 让历史回到「这条回复还没生成」的状态。
+     *
+     * ⚠️ 为什么不是「只删这一条」：如果那条后面还有别的消息，
+     * 只删中间一条会让历史出现断裂（user 问 → 没答 → 又问），
+     * 模型看到这种结构容易混乱。截断是语义上最干净的。
+     */
+    fun truncateFrom(sessionId: String, messageId: String) {
+        val session = sessionById(sessionId) ?: return
+        val idx = session.messages.indexOfFirst { it.id == messageId }
+        if (idx < 0) return
+        // 清理被截断部分的图片文件
+        session.messages.drop(idx).forEach { m ->
+            m.images.forEach { imageStore.delete(it.path) }
+        }
+        upsertSession(session.copy(messages = session.messages.take(idx)))
+    }
+
     fun deleteSession(id: String) {
         _sessions.value = _sessions.value.filterNot { it.id == id }
         prefs.write(PrefsStore.KEY_SESSIONS, ListSerializer(Session.serializer()), _sessions.value)

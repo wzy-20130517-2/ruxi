@@ -28,9 +28,11 @@ android {
         jvmTarget = "17"
         // Material3 的 TopAppBar / TextField 等仍是 @ExperimentalMaterial3Api，
         // 不 opt-in 就是编译错误（不是警告）。全局开比在每个文件写
-        // @OptIn(ExperimentalMaterial3Api::class) 干净得多 —— 本项目有 5+ 处用到。
+        // @OptIn(...) 干净得多 —— 本项目有 5+ 处用到。
+        // ExperimentalFoundationApi 是 combinedClickable（长按）需要的。
         freeCompilerArgs += listOf(
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
         )
     }
 

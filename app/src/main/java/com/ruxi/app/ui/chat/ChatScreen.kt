@@ -1,5 +1,6 @@
 package com.ruxi.app.ui.chat
 
+import android.widget.Toast
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,6 +8,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -44,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -70,6 +75,9 @@ import com.ruxi.app.ui.components.CharacterAvatar
 import com.ruxi.app.ui.theme.LocalAppearance
 import com.ruxi.app.ui.theme.RuxiColors
 import java.io.File
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 
 /**
  * 对话页。
@@ -104,7 +112,21 @@ fun ChatScreen(
     onEditCharacter: () -> Unit,
     onOpenProviderSettings: () -> Unit,
     onPickImage: (android.net.Uri) -> AttachedImage?,
+
+    // ── 消息操作 ──
+    editingMessageId: String?,
+    editDraft: String,
+    actionTarget: ChatMessage?,
+    onMessageLongPress: (ChatMessage) -> Unit,
+    onEditDraftChange: (String) -> Unit,
+    onEditConfirm: () -> Unit,
+    onEditCancel: () -> Unit,
+    onStartEdit: (ChatMessage) -> Unit,
+    onDeleteMessage: (ChatMessage) -> Unit,
+    onRegenerate: (ChatMessage) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var pendingImages by remember { mutableStateOf(emptyList<AttachedImage>()) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -176,6 +198,14 @@ fun ChatScreen(
                                 separator = separator,
                                 showThinking = showThinking,
                                 thinkingExpanded = thinkingExpanded,
+                                onLongPress = { onMessageLongPress(
+                                    ChatMessage(
+                                        role = "assistant",
+                                        content = streamingText,
+                                        reasoning = streamingReasoning,
+                                        incomplete = true,
+                                    )
+                                ) },
                             )
                         }
                     }
@@ -191,6 +221,12 @@ fun ChatScreen(
                             separator = separator,
                             showThinking = showThinking,
                             thinkingExpanded = thinkingExpanded,
+                            onLongPress = { onMessageLongPress(messages[messages.size - 1 - idx]) },
+                            editing = editingMessageId == messages[messages.size - 1 - idx].id,
+                            editDraft = editDraft,
+                            onEditDraftChange = onEditDraftChange,
+                            onEditConfirm = onEditConfirm,
+                            onEditCancel = onEditCancel,
                         )
                     }
                 }
@@ -274,6 +310,62 @@ fun ChatScreen(
                 onPickImage = { imagePicker.launch("image/*") },
             )
         }
+    }
+
+    // ══════════ 长按消息的操作菜单 ══════════
+    actionTarget?.let { msg ->
+        // 能不能重答：只有 assistant 消息、且不在流式中才有意义
+        val canRegenerate = msg.isAssistant && !msg.incomplete && !streaming
+        AlertDialog(
+            onDismissRequest = { onMessageLongPress(msg) },
+            title = {
+                Text(
+                    text = if (msg.isUser) "用户消息" else "AI 回复",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                Column {
+                    MenuAction("编辑内容") { onStartEdit(msg) }
+                    if (canRegenerate) {
+                        MenuAction("重新回复") { onRegenerate(msg) }
+                    }
+                    MenuAction("复制文本") {
+                        clipboard.setText(AnnotatedString(msg.content))
+                        context.toast("已复制")
+                        onMessageLongPress(msg)
+                    }
+                    MenuAction("删除这条", danger = true) { onDeleteMessage(msg) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onMessageLongPress(msg) }) { Text("关闭") }
+            },
+        )
+    }
+}
+
+/** 操作菜单里的一行 */
+@Composable
+private fun MenuAction(
+    label: String,
+    danger: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (danger) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -362,6 +454,15 @@ private fun MessageBubble(
     separator: String,
     showThinking: Boolean,
     thinkingExpanded: Boolean,
+    /** 长按弹出操作菜单（编辑/重答/复制/删除） */
+    onLongPress: () -> Unit = {},
+    /** 是否处于「编辑中」状态 */
+    editing: Boolean = false,
+    /** 编辑草稿与变更回调（editing=true 时生效） */
+    editDraft: String = "",
+    onEditDraftChange: (String) -> Unit = {},
+    onEditConfirm: () -> Unit = {},
+    onEditCancel: () -> Unit = {},
 ) {
     val isUser = message.isUser
     Row(
@@ -406,7 +507,43 @@ private fun MessageBubble(
                 if (message.content.isNotBlank()) Spacer(Modifier.height(6.dp))
             }
 
-            if (message.content.isNotBlank()) {
+            if (editing) {
+                // ── 编辑态：原位变成输入框 ──
+                // 选择「原位编辑」而不是弹窗：用户改的往往是措辞，
+                // 需要看着上下文改，弹窗会把上下文挡住。
+                Surface(
+                    shape = RoundedCornerShape(LocalAppearance.current.bubbleCorner.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        OutlinedTextField(
+                            value = editDraft,
+                            onValueChange = onEditDraftChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            shape = RoundedCornerShape(10.dp),
+                            maxLines = 12,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            TextButton(onClick = onEditCancel) {
+                                Text("取消", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            TextButton(onClick = onEditConfirm) {
+                                Text(
+                                    "保存",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = RuxiColors.accent,
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (message.content.isNotBlank()) {
                 val displayText = if (showRaw) message.content
                 else PromptEngine.restore(message.content, separator)
 
@@ -423,6 +560,10 @@ private fun MessageBubble(
                         isUser -> RuxiColors.accentDeep
                         else -> MaterialTheme.colorScheme.surface
                     },
+                    modifier = Modifier.combinedClickable(
+                        onClick = {},
+                        onLongClick = onLongPress,
+                    ),
                 ) {
                     Text(
                         text = displayText.ifEmpty { if (isStreaming) "…" else "" },
@@ -620,4 +761,9 @@ private fun InputBar(
             }
         }
     }
+}
+
+/** 短提示（复制成功之类） */
+private fun android.content.Context.toast(msg: String) {
+    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }

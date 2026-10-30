@@ -137,9 +137,25 @@ fun RuxiAppRoot(store: AppStore) {
         regenerateGroup: String? = null,
     ) {
         if (persistUser) {
+            // 落盘的内容要跟**实际发出去的那条**一致 —— 含首轮注入的角色卡参考图
+            // 和它的备注文本。
+            //
+            // 原来这里只存 userText + userImages（用户自己选的图），
+            // 角色卡图从来没进过历史。后果是 PromptEngine 每轮都判断
+            // 「历史里没有角色卡图」→ 每轮重新注入，同一批图被反复发给模型。
+            // 占位符逻辑也因此永远等不到「已注入」状态。
+            //
+            // ⚠️ content 也必须用 built 里那条：它带着「以下 N 张图片是参考资料」
+            // 的备注。只补 images 不补 content，历史里就会出现
+            // 「有图但没有对应说明」的错位，重新打开会话时更明显。
+            val sent = built.messages.lastOrNull { it.role == Role.USER }
             store.appendMessage(
                 sessionId,
-                ChatMessage(role = Role.USER, content = userText, images = userImages),
+                ChatMessage(
+                    role = Role.USER,
+                    content = sent?.content ?: userText,
+                    images = sent?.images ?: userImages,
+                ),
             )
         }
 

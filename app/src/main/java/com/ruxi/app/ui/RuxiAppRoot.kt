@@ -1,5 +1,6 @@
 package com.ruxi.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -38,17 +39,8 @@ sealed interface Route {
     data object Appearance : Route
     /** 从对话页直达供应商设置（改完返回对话，不绕首页） */
     data object ProviderSettings : Route
-    /**
-     * 角色编辑。
-     *
-     * [returnTo] 是「改完/返回时回到哪」——**必须由调用方指定**。
-     * 原来的实现把 onBack 硬编码成 Route.Home，于是从对话页点进去改提示词，
-     * 返回时会掉到首页而不是回到对话，用户得重新点进角色、找回会话。
-     */
-    data class CharacterEdit(
-        val id: String?,
-        val returnTo: Route = Home,
-    ) : Route
+    /** 角色编辑。返回走导航栈，自动回到进来时的页面。 */
+    data class CharacterEdit(val id: String?) : Route
     data class ProviderEdit(val id: String?) : Route
     data class Chat(val characterId: String, val sessionId: String) : Route
 }
@@ -64,6 +56,11 @@ sealed interface Route {
  * ## 流式输出的状态放在这里而不是 store
  * [streamingText] 是**纯 UI 瞬时状态**：进程被杀后不需要恢复（那条消息本来也不完整）。
  * 放进 store 会污染持久化数据。
+ *
+ * ## 导航为什么用栈而不是单个 route
+ * 单个 route 只能记住「现在在哪」，记不住「从哪来」。
+ * 于是从对话页进供应商设置，返回只能硬编码回首页 —— 用户得重新点角色、找回会话。
+ * 用 [backStack] 记住来路后，返回就是弹栈，回到进来时的那个页面。
  */
 @Composable
 fun RuxiAppRoot(store: AppStore) {
@@ -75,7 +72,29 @@ fun RuxiAppRoot(store: AppStore) {
     val uiSettings by store.uiSettings.collectAsState()
     val sessions by store.sessions.collectAsState()
 
-    var route by remember { mutableStateOf<Route>(Route.Home) }
+    // 导航栈：栈顶是当前页，返回就是弹栈。
+    // 首页是根，永远不进栈（回退到它时栈空，再按返回才退出 App）。
+    var backStack by remember { mutableStateOf<List<Route>>(emptyList()) }
+    val route: Route = backStack.lastOrNull() ?: Route.Home
+
+    /** 进新页面（压栈） */
+    fun navigateTo(target: Route) {
+        if (target == route) return
+        backStack = backStack + target
+    }
+
+    /** 返回上一级；已经在首页则返回 false，交给系统处理（退出 App） */
+    fun goBack(): Boolean {
+        if (backStack.isEmpty()) return false
+        backStack = backStack.dropLast(1)
+        return true
+    }
+
+    // 系统返回键：有上一级就返回，没有才退出。
+    // 不做这个的话，按返回直接退出 App —— 用户以为会回到上一页。
+    BackHandler(enabled = backStack.isNotEmpty()) {
+        goBack()
+    }
 
 
     // 当前对话的瞬时状态。
@@ -105,6 +124,7 @@ fun RuxiAppRoot(store: AppStore) {
      * @param persistUser 是否把用户消息落盘（重新回复时不需要，那条已经在历史里了）
      * @param userText    用户消息文本（persistUser=true 时用）
      * @param userImages  用户消息图片
+     * @param regenerateGroup 重新生成时，结果作为该组的新版本追加（null = 新消息）
      */
     fun runCompletion(
         sessionId: String,
@@ -114,6 +134,7 @@ fun RuxiAppRoot(store: AppStore) {
         persistUser: Boolean,
         userText: String = "",
         userImages: List<AttachedImage> = emptyList(),
+        regenerateGroup: String? = null,
     ) {
         if (persistUser) {
             store.appendMessage(
@@ -154,14 +175,33 @@ fun RuxiAppRoot(store: AppStore) {
                 streamingSessionId = null
                 val finalText = buffer.toString()
                 if (finalText.isNotBlank() || thinkBuffer.isNotBlank()) {
-                    store.appendMessage(
-                        sessionId,
-                        ChatMessage(
-                            role = Role.ASSISTANT,
-                            content = finalText,
-                            reasoning = thinkBuffer.toString(),
+                    val group = regenerateGroup
+                    if (group != null) {
+                        // 重新生成：结果作为原位置的新版本，旧回复保留可切回
+                        val prev = store.sessionById(sessionId)
+                            ?.messages?.lastOrNull { it.group == group }
+                        if (prev != null) {
+                            store.addVersion(sessionId, prev.id, finalText, thinkBuffer.toString())
+                        } else {
+                            store.appendMessage(
+                                sessionId,
+                                ChatMessage(
+                                    role = Role.ASSISTANT,
+                                    content = finalText,
+                                    reasoning = thinkBuffer.toString(),
+                                )
+                            )
+                        }
+                    } else {
+                        store.appendMessage(
+                            sessionId,
+                            ChatMessage(
+                                role = Role.ASSISTANT,
+                                content = finalText,
+                                reasoning = thinkBuffer.toString(),
+                            )
                         )
-                    )
+                    }
                 }
                 streamingText = ""
                 streamingReasoning = ""
@@ -203,50 +243,50 @@ fun RuxiAppRoot(store: AppStore) {
                     if (card != null) {
                         if (!card.isConfigured) {
                             // 未配置设定的卡直接引导去编辑，避免用户困惑「为什么发消息没反应」
-                            route = Route.CharacterEdit(id)
+                            navigateTo(Route.CharacterEdit(id))
                         } else {
                             // 打开最近一条会话，没有就新建
                             val existing = store.sessionsOf(id).firstOrNull()
                             val session = existing ?: store.createSession(id)
-                            route = Route.Chat(id, session.id)
+                            navigateTo(Route.Chat(id, session.id))
                         }
                     }
                 },
-                onCreateCharacter = { route = Route.CharacterEdit(null) },
-                onEditCharacter = { route = Route.CharacterEdit(it) },
+                onCreateCharacter = { navigateTo(Route.CharacterEdit(null)) },
+                onEditCharacter = { navigateTo(Route.CharacterEdit(it)) },
                 onDeleteCharacter = { store.deleteCharacter(it) },
-                onOpenSettings = { route = Route.Settings },
+                onOpenSettings = { navigateTo(Route.Settings) },
             )
 
             Route.Settings -> SettingsScreen(
                 providers = providers,
                 activeId = activeProviderId,
                 uiSettings = uiSettings,
-                onBack = { route = Route.Home },
-                onAddProvider = { route = Route.ProviderEdit(null) },
-                onEditProvider = { route = Route.ProviderEdit(it) },
+                onBack = { goBack() },
+                onAddProvider = { navigateTo(Route.ProviderEdit(null)) },
+                onEditProvider = { navigateTo(Route.ProviderEdit(it)) },
                 onDeleteProvider = { store.deleteProvider(it) },
                 onSelectProvider = { store.setActiveProvider(it) },
                 onUpdateUi = { store.updateUiSettings(it) },
-                onOpenAppearance = { route = Route.Appearance },
+                onOpenAppearance = { navigateTo(Route.Appearance) },
             )
 
             Route.ProviderSettings -> SettingsScreen(
                 providers = providers,
                 activeId = activeProviderId,
                 uiSettings = uiSettings,
-                onBack = { route = Route.Home },
-                onAddProvider = { route = Route.ProviderEdit(null) },
-                onEditProvider = { route = Route.ProviderEdit(it) },
+                onBack = { goBack() },
+                onAddProvider = { navigateTo(Route.ProviderEdit(null)) },
+                onEditProvider = { navigateTo(Route.ProviderEdit(it)) },
                 onDeleteProvider = { store.deleteProvider(it) },
                 onSelectProvider = { store.setActiveProvider(it) },
                 onUpdateUi = { store.updateUiSettings(it) },
-                onOpenAppearance = { route = Route.Appearance },
+                onOpenAppearance = { navigateTo(Route.Appearance) },
             )
 
             Route.Appearance -> AppearanceScreen(
                 settings = uiSettings,
-                onBack = { route = Route.Settings },
+                onBack = { goBack() },
                 onUpdate = { store.updateUiSettings(it) },
             )
 
@@ -254,10 +294,10 @@ fun RuxiAppRoot(store: AppStore) {
                 val initial = r.id?.let { id -> providers.firstOrNull { it.id == id } }
                 ProviderEditScreen(
                     initial = initial,
-                    onBack = { route = Route.Settings },
+                    onBack = { goBack() },
                     onSave = { provider ->
                         store.upsertProvider(provider)
-                        route = Route.Settings
+                        goBack()
                     },
                 )
             }
@@ -266,10 +306,10 @@ fun RuxiAppRoot(store: AppStore) {
                 val initial = r.id?.let { store.characterById(it) }
                 CharacterEditScreen(
                     initial = initial,
-                    onBack = { route = r.returnTo },
+                    onBack = { goBack() },
                     onSave = { card ->
                         store.upsertCharacter(card)
-                        route = r.returnTo
+                        goBack()
                     },
                     onPickImage = { uri -> store.importImage(uri) },
                     onRemoveImage = { path -> store.deleteImageFile(path) },
@@ -283,11 +323,11 @@ fun RuxiAppRoot(store: AppStore) {
                 val session = sessions.firstOrNull { it.id == r.sessionId }
 
                 if (card == null || session == null) {
-                    LaunchedEffect(Unit) { route = Route.Home }
+                    LaunchedEffect(Unit) { backStack = emptyList() }
                 } else {
                     ChatScreen(
                         card = card,
-                        messages = session.messages,
+                        session = session,
                         // 只在本会话确实是流式目标时才显示流式气泡
                         streaming = streaming && streamingSessionId == session.id,
                         streamingText = streamingText,
@@ -298,7 +338,7 @@ fun RuxiAppRoot(store: AppStore) {
                         onBack = {
                             // 返回时**不打断**流式：用户可能只是想看一眼角色列表。
                             // 流结束后消息照常落盘，回来还能看到完整回复。
-                            route = Route.Home
+                            goBack()
                         },
                         onSend = { text, images ->
                             errorText = null
@@ -368,12 +408,9 @@ fun RuxiAppRoot(store: AppStore) {
                         },
                         onEditCharacter = {
                             // 记住当前会话，改完提示词直接回到这条对话
-                            route = Route.CharacterEdit(
-                                id = card.id,
-                                returnTo = Route.Chat(card.id, session.id),
-                            )
+                            navigateTo(Route.CharacterEdit(card.id))
                         },
-                        onOpenProviderSettings = { route = Route.ProviderSettings },
+                        onOpenProviderSettings = { navigateTo(Route.ProviderSettings) },
                         onPickImage = { uri -> store.importImage(uri) },
                         assisting = assisting,
                         onAssistReply = {
@@ -435,7 +472,8 @@ fun RuxiAppRoot(store: AppStore) {
                         onEditConfirm = {
                             val id = editingMessageId
                             if (id != null && editDraft.isNotBlank()) {
-                                store.updateMessage(session.id, id) { it.copy(content = editDraft) }
+                                // 追加版本而不是覆盖 —— 旧的编辑前内容要能切回去
+                                store.addVersion(session.id, id, editDraft)
                             }
                             editingMessageId = null
                             editDraft = ""
@@ -453,6 +491,9 @@ fun RuxiAppRoot(store: AppStore) {
                             actionTarget = null
                             store.deleteMessage(session.id, msg.id)
                         },
+                        onSelectVersion = { groupId, messageId ->
+                            store.selectVersion(session.id, groupId, messageId)
+                        },
                         onRegenerate = { msg ->
                             actionTarget = null
                             val provider = store.activeProvider()
@@ -461,14 +502,19 @@ fun RuxiAppRoot(store: AppStore) {
                             } else if (streaming) {
                                 errorText = "正在回复中，稍等一下"
                             } else {
-                                // 重新回复 = 删掉这条 assistant 及其之后的所有消息，
-                                // 用剩下的历史重跑。这样「重答」和「重答后再改问题」
-                                // 都不会在历史里留下孤儿消息。
-                                store.truncateFrom(session.id, msg.id)
-                                val snapshot = store.sessionById(session.id) ?: session
+                                // 重新回复 = 用**这条之前的**历史重跑，结果作为原位置的新版本。
+                                // 旧回复不删，用户可以用箭头切回去对比。
+                                //
+                                // 组装上下文时要把这条自己排除掉，否则模型会看到
+                                // 「上一句已经答过」而倾向于复述。
+                                val group = msg.group
+                                val before = store.sessionById(session.id) ?: session
+                                val trimmed = before.copy(
+                                    messages = before.messages.filter { it.group != group }
+                                )
                                 val built = PromptEngine.build(
                                     card = card,
-                                    session = snapshot,
+                                    session = trimmed,
                                     userText = "",
                                     userImages = emptyList(),
                                     replayThinking = provider.replayThinking,
@@ -479,6 +525,7 @@ fun RuxiAppRoot(store: AppStore) {
                                     provider = provider,
                                     built = built,
                                     persistUser = false,
+                                    regenerateGroup = group,
                                 )
                             }
                         },

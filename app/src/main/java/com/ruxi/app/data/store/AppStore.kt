@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.builtins.ListSerializer
+import java.util.UUID
 
 /**
  * 全局数据仓库（单例）。
@@ -157,19 +158,44 @@ class AppStore private constructor(context: Context) {
     }
 
     /**
-     * 就地修改某条消息。
+     * 给某条消息追加一个新版本，并切到它。
      *
-     * [transform] 拿到旧消息返回新消息 —— 用变换函数而不是直接传新对象，
-     * 是为了让调用方不必自己拼一份完整副本（容易漏字段，比如 id/timestamp）。
+     * 编辑消息、重新生成回复都走这里 —— **旧内容不删，作为同组的另一个版本保留**。
+     * 新版本的 id 是新生成的，[ChatMessage.groupId] 沿用原组的。
      */
-    fun updateMessage(
+    fun addVersion(
         sessionId: String,
         messageId: String,
-        transform: (ChatMessage) -> ChatMessage,
+        content: String,
+        reasoning: String = "",
     ) {
         val session = sessionById(sessionId) ?: return
-        val msgs = session.messages.map { if (it.id == messageId) transform(it) else it }
-        upsertSession(session.copy(messages = msgs))
+        val target = session.messages.firstOrNull { it.id == messageId } ?: return
+        val group = target.group
+        val maxIdx = session.messages
+            .filter { it.group == group }
+            .maxOfOrNull { it.versionIndex } ?: 0
+        val newMsg = target.copy(
+            id = UUID.randomUUID().toString(),
+            content = content,
+            reasoning = reasoning,
+            timestamp = System.currentTimeMillis(),
+            groupId = group,
+            versionIndex = maxIdx + 1,
+            incomplete = false,
+        )
+        upsertSession(
+            session.copy(
+                messages = session.messages + newMsg,
+                activeVersion = session.activeVersion + (group to newMsg.id),
+            )
+        )
+    }
+
+    /** 切换某组显示的版本 */
+    fun selectVersion(sessionId: String, groupId: String, messageId: String) {
+        val session = sessionById(sessionId) ?: return
+        upsertSession(session.copy(activeVersion = session.activeVersion + (groupId to messageId)))
     }
 
     /**
@@ -200,27 +226,6 @@ class AppStore private constructor(context: Context) {
         val keep = cardImagePaths(session.characterId)
         msg.images.filterNot { it.path in keep }.forEach { imageStore.delete(it.path) }
         upsertSession(withGreetingRestored(session.copy(messages = session.messages.filterNot { it.id == messageId })))
-    }
-
-    /**
-     * 从某条消息起**截断**（含该条）。
-     *
-     * 「重新回复」用的就是它：删掉那条 assistant 及其之后的全部消息，
-     * 让历史回到「这条回复还没生成」的状态。
-     *
-     * ⚠️ 为什么不是「只删这一条」：如果那条后面还有别的消息，
-     * 只删中间一条会让历史出现断裂（user 问 → 没答 → 又问），
-     * 模型看到这种结构容易混乱。截断是语义上最干净的。
-     */
-    fun truncateFrom(sessionId: String, messageId: String) {
-        val session = sessionById(sessionId) ?: return
-        val idx = session.messages.indexOfFirst { it.id == messageId }
-        if (idx < 0) return
-        val keep = cardImagePaths(session.characterId)
-        session.messages.drop(idx).forEach { m ->
-            m.images.filterNot { it.path in keep }.forEach { imageStore.delete(it.path) }
-        }
-        upsertSession(withGreetingRestored(session.copy(messages = session.messages.take(idx))))
     }
 
     fun deleteSession(id: String) {

@@ -42,7 +42,10 @@ object PromptEngine {
         }
 
         // ── 2. 历史消息 ──
-        session.messages.forEach { msg ->
+        //
+        // 只取每组当前选中的那个版本。用户编辑/重答产生的其它版本
+        // 只是备选，不该一起塞进上下文（否则模型会看到同一句话说了好几遍）。
+        session.visibleMessages().forEach { msg ->
             if (msg.isError) return@forEach          // 失败提示不进上下文
             if (msg.content.isBlank() && msg.images.isEmpty()) return@forEach
 

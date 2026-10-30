@@ -70,6 +70,7 @@ import coil.compose.AsyncImage
 import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
+import com.ruxi.app.data.model.Session
 import com.ruxi.app.ui.components.CharacterAvatar
 import com.ruxi.app.ui.theme.LocalAppearance
 import com.ruxi.app.ui.theme.RuxiColors
@@ -78,6 +79,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -98,7 +101,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun ChatScreen(
     card: CharacterCard,
-    messages: List<ChatMessage>,
+    session: Session,
     streaming: Boolean,
     streamingText: String,
     errorText: String?,
@@ -136,7 +139,11 @@ fun ChatScreen(
     onStartEdit: (ChatMessage) -> Unit,
     onDeleteMessage: (ChatMessage) -> Unit,
     onRegenerate: (ChatMessage) -> Unit,
+    /** 切换某组显示的版本 */
+    onSelectVersion: (groupId: String, messageId: String) -> Unit,
 ) {
+    // 每组只显示一个版本，其余作为备选（左右箭头切换）
+    val messages = session.visibleMessages()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
@@ -173,7 +180,9 @@ fun ChatScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        // 透明底 —— 让 BackgroundLayer 透上来。角色卡没设背景时
+        // BackgroundLayer 自己会铺纯色底，所以这里不需要再画一层。
+        containerColor = Color.Transparent,
         topBar = {
             ChatTopBar(
                 card = card,
@@ -226,21 +235,33 @@ fun ChatScreen(
                         }
                     }
                     items(
-                        count = messages.size,
-                        key = { idx -> messages[messages.size - 1 - idx].id },
+                        count = visible.size,
+                        key = { idx -> visible[visible.size - 1 - idx].id },
                     ) { idx ->
+                        val msg = visible[visible.size - 1 - idx]
+                        val versions = session.versionsOf(msg.group)
                         MessageBubble(
-                            message = messages[messages.size - 1 - idx],
+                            message = msg,
                             card = card,
                             isStreaming = false,
                             showThinking = showThinking,
                             thinkingExpanded = thinkingExpanded,
-                            onLongPress = { onMessageLongPress(messages[messages.size - 1 - idx]) },
-                            editing = editingMessageId == messages[messages.size - 1 - idx].id,
+                            onLongPress = { onMessageLongPress(msg) },
+                            editing = editingMessageId == msg.id,
                             editDraft = editDraft,
                             onEditDraftChange = onEditDraftChange,
                             onEditConfirm = onEditConfirm,
                             onEditCancel = onEditCancel,
+                            versionCount = versions.size,
+                            versionCursor = session.versionCursor(msg.group),
+                            onPrevVersion = {
+                                val i = session.versionCursor(msg.group)
+                                if (i > 0) onSelectVersion(msg.group, versions[i - 1].id)
+                            },
+                            onNextVersion = {
+                                val i = session.versionCursor(msg.group)
+                                if (i < versions.lastIndex) onSelectVersion(msg.group, versions[i + 1].id)
+                            },
                         )
                     }
                 }
@@ -539,6 +560,12 @@ private fun MessageBubble(
     onEditDraftChange: (String) -> Unit = {},
     onEditConfirm: () -> Unit = {},
     onEditCancel: () -> Unit = {},
+    /** 该消息所在组共有几个版本（>1 时显示切换箭头） */
+    versionCount: Int = 1,
+    /** 当前显示的是组内第几个版本（0 起） */
+    versionCursor: Int = 0,
+    onPrevVersion: () -> Unit = {},
+    onNextVersion: () -> Unit = {},
 ) {
     val isUser = message.isUser
     Row(
@@ -653,10 +680,72 @@ private fun MessageBubble(
                 }
             }
 
+            // 版本切换：同一位置有多个版本时才显示
+            if (versionCount > 1 && !isStreaming && !editing) {
+                Spacer(Modifier.height(2.dp))
+                VersionSwitcher(
+                    count = versionCount,
+                    cursor = versionCursor,
+                    onPrev = onPrevVersion,
+                    onNext = onNextVersion,
+                )
+            }
+
             if (isStreaming) {
                 Spacer(Modifier.height(4.dp))
                 TypingDots()
             }
+        }
+    }
+}
+
+/**
+ * 版本切换控件：`‹ 1/2 ›`。
+ *
+ * 用序号而不是「编辑前/编辑后」这类文案 —— 版本数不设上限，
+ * 用户可能来回改很多次，序号是唯一能扩展到任意数量的表示。
+ */
+@Composable
+private fun VersionSwitcher(
+    count: Int,
+    cursor: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+) {
+    val canPrev = cursor > 0
+    val canNext = cursor < count - 1
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+    val active = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = onPrev,
+            enabled = canPrev,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                Icons.Default.ChevronLeft,
+                contentDescription = "上一版",
+                tint = if (canPrev) active else dim,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Text(
+            text = "${cursor + 1}/$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = active,
+        )
+        IconButton(
+            onClick = onNext,
+            enabled = canNext,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = "下一版",
+                tint = if (canNext) active else dim,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

@@ -143,7 +143,7 @@ fun ChatScreen(
     onSelectVersion: (groupId: String, messageId: String) -> Unit,
 ) {
     // 每组只显示一个版本，其余作为备选（左右箭头切换）
-    val messages = session.visibleMessages()
+    val visible = session.visibleMessages()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
@@ -173,7 +173,7 @@ fun ChatScreen(
     // 会触发高频重组合 + animateScrollToItem 抢滚动，长回复下明显掉帧。
     // 改成只依赖「消息条数」和「是否在流式」，流式期间用 scrollToItem 直接跳
     // （不带动画，开销小得多）。
-    LaunchedEffect(messages.size, streaming) {
+    LaunchedEffect(visible.size, streaming) {
         if (listState.firstVisibleItemIndex <= 2) {
             runCatching { listState.animateScrollToItem(0) }
         }
@@ -266,7 +266,7 @@ fun ChatScreen(
                     }
                 }
 
-                if (messages.isEmpty() && !streaming) {
+                if (visible.isEmpty() && !streaming) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "开始你的第一句话吧",

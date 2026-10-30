@@ -2,7 +2,6 @@ package com.ruxi.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -164,12 +163,6 @@ fun RuxiAppRoot(store: AppStore) {
                             reasoning = thinkBuffer.toString(),
                         )
                     )
-                    if (!failed) {
-                        val s = store.sessionById(sessionId)
-                        if (s != null && !s.injectedImages) {
-                            store.upsertSession(s.copy(injectedImages = true))
-                        }
-                    }
                 }
                 streamingText = ""
                 streamingReasoning = ""
@@ -278,7 +271,7 @@ fun RuxiAppRoot(store: AppStore) {
                 val initial = r.id?.let { store.characterById(it) }
                 CharacterEditScreen(
                     initial = initial,
-                    defaultHidden = promptSettings.hiddenTemplate.ifBlank { com.ruxi.app.data.model.PromptSettings.DEFAULT_HIDDEN },
+                    defaultHidden = promptSettings.hiddenTemplate,
                     onBack = { route = r.returnTo },
                     onSave = { card ->
                         store.upsertCharacter(card)
@@ -305,9 +298,6 @@ fun RuxiAppRoot(store: AppStore) {
                         streaming = streaming && streamingSessionId == session.id,
                         streamingText = streamingText,
                         errorText = errorText,
-                        // 「显示原始输出」= 用户想看原文；或用户关掉了自动还原
-                        showRaw = uiSettings.showRawText || !promptSettings.autoRestore,
-                        separator = promptSettings.separator.ifEmpty { "·" },
                         showThinking = uiSettings.showThinking,
                         thinkingExpanded = uiSettings.thinkingExpanded,
                         streamingReasoning = streamingReasoning,
@@ -368,12 +358,9 @@ fun RuxiAppRoot(store: AppStore) {
                             streamingReasoning = ""
                         },
                         onClearMessages = {
-                            // 清空 = 回到「刚建会话」的状态，所以两件事都要做：
-                            //   1. injectedImages 重置 → 角色卡图片/备注会重新注入
-                            //   2. **开场白要放回去** → 否则只回来一半，很别扭
-                            //
-                            // ⚠️ 开场白只在 createSession() 里注入，清空走的是 upsertSession，
-                            // 不补这一步的话开场白会永久丢失（用户预期是「重来一遍」）。
+                            // 清空 = 回到「刚建会话」的状态：消息清掉、开场白放回去。
+                            // 角色卡图片不需要手动重置 —— 历史里没有那些路径了，
+                            // PromptEngine 下一轮自然会重新注入。
                             val greeting = card.greeting
                             store.upsertSession(
                                 session.copy(
@@ -383,7 +370,6 @@ fun RuxiAppRoot(store: AppStore) {
                                             content = greeting,
                                         )
                                     ),
-                                    injectedImages = false,
                                 )
                             )
                         },
@@ -430,9 +416,7 @@ fun RuxiAppRoot(store: AppStore) {
                                         errorText = "生成失败：${e.message}"
                                     }
                                     assisting = false
-                                    // 清掉可能残留的分隔符（这轮不该带）
-                                    val text = PromptEngine
-                                        .restore(sb.toString(), promptSettings.separator.ifEmpty { "·" })
+                                    val text = sb.toString()
                                         .trim()
                                         .trim('"', '「', '」', '“', '”', '\'', '：', ':')
                                         .trim()
@@ -471,12 +455,7 @@ fun RuxiAppRoot(store: AppStore) {
                         onStartEdit = { msg ->
                             actionTarget = null
                             editingMessageId = msg.id
-                            // 编辑时给**还原后**的文本 —— 用户看到的就是这个，
-                            // 拿带分隔符的原文去编辑会一头雾水
-                            editDraft = PromptEngine.restore(
-                                msg.content,
-                                promptSettings.separator.ifEmpty { "·" },
-                            )
+                            editDraft = msg.content
                         },
                         onDeleteMessage = { msg ->
                             actionTarget = null

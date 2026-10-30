@@ -2,10 +2,7 @@ package com.ruxi.app.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -47,8 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ruxi.app.data.api.ChatClient
@@ -233,37 +226,11 @@ fun SettingsScreen(
             // ═══════ 提示词引擎 ═══════
             SectionTitle("提示词引擎")
             Column(Modifier.padding(horizontal = 16.dp)) {
-                RuxiTextField(
-                    value = promptSettings.separator,
-                    onValueChange = { onUpdatePrompt(promptSettings.copy(separator = it)) },
-                    label = "分隔符（默认 ·）",
-                    singleLine = true,
-                )
-
-                Spacer(Modifier.height(12.dp))
                 SettingSwitch(
                     title = "启用隐藏要求",
                     subtitle = "关闭后就是一个普通角色扮演应用",
                     checked = promptSettings.hiddenEnabled,
                     onChange = { onUpdatePrompt(promptSettings.copy(hiddenEnabled = it)) },
-                )
-                SettingSwitch(
-                    title = "系统提示词也逐字分隔",
-                    subtitle = "作为格式示范，效果比纯文字要求好得多",
-                    checked = promptSettings.splitSystem,
-                    onChange = { onUpdatePrompt(promptSettings.copy(splitSystem = it)) },
-                )
-                SettingSwitch(
-                    title = "用户消息自动分隔",
-                    subtitle = "你打的字会自动变成逐字分隔的形式",
-                    checked = promptSettings.splitUser,
-                    onChange = { onUpdatePrompt(promptSettings.copy(splitUser = it)) },
-                )
-                SettingSwitch(
-                    title = "自动还原模型输出",
-                    subtitle = "界面上显示「你好」而不是「你·好」",
-                    checked = promptSettings.autoRestore,
-                    onChange = { onUpdatePrompt(promptSettings.copy(autoRestore = it)) },
                 )
             }
 
@@ -271,18 +238,10 @@ fun SettingsScreen(
             RuxiTextField(
                 value = promptSettings.hiddenTemplate,
                 onValueChange = { onUpdatePrompt(promptSettings.copy(hiddenTemplate = it)) },
-                label = "留空 = 用内置默认模板。{SEP} 会替换成上面的分隔符",
+                label = "留空 = 不附加任何隐藏要求",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 minLines = 8,
             )
-            TextButton(
-                onClick = {
-                    onUpdatePrompt(promptSettings.copy(hiddenTemplate = PromptSettings.DEFAULT_HIDDEN))
-                },
-                modifier = Modifier.padding(start = 8.dp),
-            ) {
-                Text("填入内置默认模板", color = RuxiColors.accent)
-            }
 
             Spacer(Modifier.height(16.dp))
 
@@ -319,12 +278,6 @@ fun SettingsScreen(
                 }
 
                 Spacer(Modifier.height(12.dp))
-                SettingSwitch(
-                    title = "显示原始输出",
-                    subtitle = "气泡里显示模型吐出的带分隔符原文",
-                    checked = uiSettings.showRawText,
-                    onChange = { onUpdateUi(uiSettings.copy(showRawText = it)) },
-                )
             }
 
             Spacer(Modifier.height(40.dp))

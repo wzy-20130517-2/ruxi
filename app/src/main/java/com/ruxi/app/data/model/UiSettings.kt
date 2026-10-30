@@ -16,8 +16,6 @@ data class UiSettings(
     val themeMode: String = "dark",
     /** 界面整体字号缩放 0.8~1.4 */
     val fontScale: Float = 1.0f,
-    /** 聊天气泡里是否显示原始（带分隔符）文本 */
-    val showRawText: Boolean = false,
     /** 气泡圆角 0~28 */
     val bubbleCorner: Int = 16,
     /** 是否在气泡里显示模型的思考过程（reasoning_content） */

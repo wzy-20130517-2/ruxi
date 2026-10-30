@@ -2,8 +2,10 @@ package com.ruxi.app.data.store
 
 import android.content.Context
 import com.ruxi.app.data.model.CharacterCard
+import ChatMessage
 import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Provider
+import com.ruxi.app.data.model.Role
 import com.ruxi.app.data.model.Session
 import com.ruxi.app.data.model.UiSettings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -146,13 +148,13 @@ class AppStore private constructor(context: Context) {
     }
 
     /** 追加一条消息并落盘（流式过程中不调用，等消息完整后再存） */
-    fun appendMessage(sessionId: String, message: com.ruxi.app.data.model.ChatMessage) {
+    fun appendMessage(sessionId: String, message: ChatMessage) {
         val session = sessionById(sessionId) ?: return
         upsertSession(session.copy(messages = session.messages + message))
     }
 
     /** 替换最后一条消息（流式结束后把临时消息换成最终版本） */
-    fun replaceLastMessage(sessionId: String, message: com.ruxi.app.data.model.ChatMessage) {
+    fun replaceLastMessage(sessionId: String, message: ChatMessage) {
         val session = sessionById(sessionId) ?: return
         val msgs = session.messages.toMutableList()
         if (msgs.isEmpty()) return
@@ -169,20 +171,41 @@ class AppStore private constructor(context: Context) {
     fun updateMessage(
         sessionId: String,
         messageId: String,
-        transform: (com.ruxi.app.data.model.ChatMessage) -> com.ruxi.app.data.model.ChatMessage,
+        transform: (ChatMessage) -> ChatMessage,
     ) {
         val session = sessionById(sessionId) ?: return
         val msgs = session.messages.map { if (it.id == messageId) transform(it) else it }
         upsertSession(session.copy(messages = msgs))
     }
 
+    /**
+     * 该会话所属角色卡引用的图片路径。
+     *
+     * 角色卡的参考图会被首轮消息引用（同一份文件，不是副本），
+     * 所以删消息时不能无差别删文件 —— 得先排除角色卡还在用的那些。
+     */
+    private fun cardImagePaths(characterId: String): Set<String> =
+        characterById(characterId)?.images?.mapTo(mutableSetOf()) { it.path } ?: emptySet()
+
+    /** 消息全删光时，把开场白补回来（用户预期是「重来一遍」） */
+    private fun withGreetingRestored(session: Session): Session {
+        if (session.messages.isNotEmpty()) return session
+        val greeting = characterById(session.characterId)?.greeting ?: ""
+        if (greeting.isBlank()) return session
+        return session.copy(
+            messages = listOf(
+                ChatMessage(role = Role.ASSISTANT, content = greeting),
+            )
+        )
+    }
+
     /** 删除单条消息 */
     fun deleteMessage(sessionId: String, messageId: String) {
         val session = sessionById(sessionId) ?: return
-        // 顺带删掉它附带的图片文件（否则私有目录会越积越多）
-        session.messages.firstOrNull { it.id == messageId }
-            ?.images?.forEach { imageStore.delete(it.path) }
-        upsertSession(session.copy(messages = session.messages.filterNot { it.id == messageId }))
+        val msg = session.messages.firstOrNull { it.id == messageId } ?: return
+        val keep = cardImagePaths(session.characterId)
+        msg.images.filterNot { it.path in keep }.forEach { imageStore.delete(it.path) }
+        upsertSession(withGreetingRestored(session.copy(messages = session.messages.filterNot { it.id == messageId })))
     }
 
     /**
@@ -199,11 +222,11 @@ class AppStore private constructor(context: Context) {
         val session = sessionById(sessionId) ?: return
         val idx = session.messages.indexOfFirst { it.id == messageId }
         if (idx < 0) return
-        // 清理被截断部分的图片文件
+        val keep = cardImagePaths(session.characterId)
         session.messages.drop(idx).forEach { m ->
-            m.images.forEach { imageStore.delete(it.path) }
+            m.images.filterNot { it.path in keep }.forEach { imageStore.delete(it.path) }
         }
-        upsertSession(session.copy(messages = session.messages.take(idx)))
+        upsertSession(withGreetingRestored(session.copy(messages = session.messages.take(idx))))
     }
 
     fun deleteSession(id: String) {
@@ -221,8 +244,8 @@ class AppStore private constructor(context: Context) {
             characterId = characterId,
             title = card?.name ?: "新对话",
             messages = if (greeting.isBlank()) emptyList() else listOf(
-                com.ruxi.app.data.model.ChatMessage(
-                    role = com.ruxi.app.data.model.Role.ASSISTANT,
+                ChatMessage(
+                    role = Role.ASSISTANT,
                     content = greeting,
                 )
             ),

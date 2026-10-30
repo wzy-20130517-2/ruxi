@@ -64,14 +64,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
-import com.ruxi.app.data.prompt.PromptEngine
 import com.ruxi.app.ui.components.CharacterAvatar
 import com.ruxi.app.ui.theme.LocalAppearance
 import com.ruxi.app.ui.theme.RuxiColors
@@ -97,9 +95,6 @@ fun ChatScreen(
     streaming: Boolean,
     streamingText: String,
     errorText: String?,
-    showRaw: Boolean,
-    /** 当前生效的分隔符，用于还原显示。必须来自设置，不能硬编码。 */
-    separator: String,
     /** 是否显示模型思考过程 */
     showThinking: Boolean,
     /** 思考块默认是否展开 */
@@ -214,8 +209,6 @@ fun ChatScreen(
                                 ),
                                 card = card,
                                 isStreaming = true,
-                                showRaw = showRaw,
-                                separator = separator,
                                 showThinking = showThinking,
                                 thinkingExpanded = thinkingExpanded,
                                 // 流式气泡**不响应长按**：它是每次重组都新建的临时对象
@@ -233,8 +226,6 @@ fun ChatScreen(
                             message = messages[messages.size - 1 - idx],
                             card = card,
                             isStreaming = false,
-                            showRaw = showRaw,
-                            separator = separator,
                             showThinking = showThinking,
                             thinkingExpanded = thinkingExpanded,
                             onLongPress = { onMessageLongPress(messages[messages.size - 1 - idx]) },
@@ -468,8 +459,6 @@ private fun MessageBubble(
     message: ChatMessage,
     card: CharacterCard,
     isStreaming: Boolean,
-    showRaw: Boolean,
-    separator: String,
     showThinking: Boolean,
     thinkingExpanded: Boolean,
     /** 长按弹出操作菜单（编辑/重答/复制/删除） */
@@ -562,8 +551,7 @@ private fun MessageBubble(
                     }
                 }
             } else if (message.content.isNotBlank()) {
-                val displayText = if (showRaw) message.content
-                else PromptEngine.restore(message.content, separator)
+                val displayText = message.content
 
                 val corner = LocalAppearance.current.bubbleCorner.dp
                 Surface(

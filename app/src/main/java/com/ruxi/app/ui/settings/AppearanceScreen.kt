@@ -48,7 +48,6 @@ import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import com.ruxi.app.ui.theme.parseHexColor
-import com.ruxi.app.ui.theme.toHexString
 
 /**
  * 外观设置页：主题色、明暗、字号、气泡。
@@ -268,13 +267,6 @@ fun AppearanceScreen(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            SettingSwitchRow(
-                title = "显示原始输出",
-                subtitle = "气泡里显示模型吐出的带分隔符原文",
-                checked = settings.showRawText,
-                onChange = { onUpdate(settings.copy(showRawText = it)) },
-            )
             SettingSwitchRow(
                 title = "显示思考过程",
                 subtitle = "模型支持时，在气泡上方显示它的推理过程",

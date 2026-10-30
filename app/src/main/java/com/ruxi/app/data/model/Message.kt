@@ -37,10 +37,6 @@ data class ChatMessage(
 
 /**
  * 一个会话。按角色卡隔离 —— 每个角色可以有多条并行会话。
- *
- * [injectedImages] 记录「图片是否已注入过」。
- * 判断依据不是轮次序号，而是这个布尔位：用户可能删掉首轮消息，
- * 用轮次号判断会导致图片再也不注入。
  */
 @Serializable
 data class Session(
@@ -48,7 +44,6 @@ data class Session(
     val characterId: String,
     val title: String = "新对话",
     val messages: List<ChatMessage> = emptyList(),
-    val injectedImages: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

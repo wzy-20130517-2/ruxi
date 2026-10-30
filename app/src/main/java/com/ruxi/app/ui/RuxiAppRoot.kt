@@ -193,9 +193,12 @@ fun RuxiAppRoot(store: AppStore) {
                 if (finalText.isNotBlank() || thinkBuffer.isNotBlank()) {
                     val group = regenerateGroup
                     if (group != null) {
-                        // 重新生成：结果作为原位置的新版本，旧回复保留可切回
+                        // 重新生成：结果作为原位置的新版本，旧回复保留可切回。
+                        // 取版本号最大的那条作为基准（不能用 lastOrNull —— 那是列表位置，
+                        // 不是版本序号，多版本混排时会取错）。
                         val prev = store.sessionById(sessionId)
-                            ?.messages?.lastOrNull { it.group == group }
+                            ?.messages?.filter { it.group == group }
+                            ?.maxByOrNull { it.versionIndex }
                         if (prev != null) {
                             store.addVersion(sessionId, prev.id, finalText, thinkBuffer.toString())
                         } else {
@@ -518,31 +521,55 @@ fun RuxiAppRoot(store: AppStore) {
                             } else if (streaming) {
                                 errorText = "正在回复中，稍等一下"
                             } else {
-                                // 重新回复 = 用**这条之前的**历史重跑，结果作为原位置的新版本。
+                                // 重新回复 = 用**这条回复之前**的历史重跑，结果作为原位置的新版本。
                                 // 旧回复不删，用户可以用箭头切回去对比。
                                 //
-                                // 组装上下文时要把这条自己排除掉，否则模型会看到
-                                // 「上一句已经答过」而倾向于复述。
+                                // ⚠️ 必须按**位置**截断，不能只按 group 过滤掉自己。
+                                // 只删自己会把后面几轮留在历史里，变成「助手先开口」的孤儿：
+                                //   用户:你好 / 助手:你好 / 用户:你是谁 / 助手:我是xx
+                                //   重生成第二条（助手:你好）→ 删掉它 → 历史成了
+                                //   用户:你好 / 用户:你是谁 / 助手:我是xx
+                                //   角色交替乱了，模型直接答歪。
+                                //
+                                // 正确做法：找到这条 assistant 前面那条 user，
+                                // 历史保留到那条 user 之前，再把它的正文作为本轮输入。
                                 val group = msg.group
-                                val before = store.sessionById(session.id) ?: session
-                                val trimmed = before.copy(
-                                    messages = before.messages.filter { it.group != group }
-                                )
-                                val built = PromptEngine.build(
-                                    card = card,
-                                    session = trimmed,
-                                    userText = "",
-                                    userImages = emptyList(),
-                                    replayThinking = provider.replayThinking,
-                                )
-                                runCompletion(
-                                    sessionId = session.id,
-                                    card = card,
-                                    provider = provider,
-                                    built = built,
-                                    persistUser = false,
-                                    regenerateGroup = group,
-                                )
+                                val snapshot = store.sessionById(session.id) ?: session
+                                val visible = snapshot.visibleMessages()
+                                val targetIdx = visible.indexOfFirst { it.group == group }
+                                if (targetIdx < 0) {
+                                    errorText = "找不到这条消息，可能已被删除"
+                                } else {
+                                    // 往前找最近的一条 user（正常情况下就是紧挨着的上一条）
+                                    val userIdx = (targetIdx - 1 downTo 0)
+                                        .firstOrNull { visible[it].isUser }
+                                    if (userIdx == null) {
+                                        errorText = "这条回复前面没有用户消息，无法重新生成"
+                                    } else {
+                                        val userMsg = visible[userIdx]
+                                        // 保留该 user 之前的全部历史，去掉它自己
+                                        // —— 本轮输入由 userText 传入，避免重复一次
+                                        val keepGroups = visible.take(userIdx).map { it.group }.toSet()
+                                        val trimmed = snapshot.copy(
+                                            messages = snapshot.messages.filter { it.group in keepGroups }
+                                        )
+                                        val built = PromptEngine.build(
+                                            card = card,
+                                            session = trimmed,
+                                            userText = userMsg.content,
+                                            userImages = userMsg.images,
+                                            replayThinking = provider.replayThinking,
+                                        )
+                                        runCompletion(
+                                            sessionId = session.id,
+                                            card = card,
+                                            provider = provider,
+                                            built = built,
+                                            persistUser = false,
+                                            regenerateGroup = group,
+                                        )
+                                    }
+                                }
                             }
                         },
                     )

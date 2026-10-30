@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -183,6 +185,13 @@ fun ChatScreen(
         // 透明底 —— 让 BackgroundLayer 透上来。角色卡没设背景时
         // BackgroundLayer 自己会铺纯色底，所以这里不需要再画一层。
         containerColor = Color.Transparent,
+        // Scaffold 默认的 contentWindowInsets 是 systemBars，会把导航栏高度
+        // 算进 content padding。而输入栏自己已经用 navigationBarsPadding()
+        // 处理了一次 —— 两处叠加会让输入栏被抬高两倍导航栏高度，
+        // Surface 只包住内容不铺到底，中间那段就露出背景（输入框下面漏一行）。
+        //
+        // 这里把底部交给输入栏自己管，Scaffold 只保留顶部（topBar 已消费）。
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             ChatTopBar(
                 card = card,
@@ -483,7 +492,10 @@ private fun ChatTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color(0x2A2F1E5C), Color(0x00000000))))
-                .padding(start = 4.dp, end = 4.dp, top = 34.dp, bottom = 8.dp),
+                // 用 statusBarsPadding 而不是硬编码 top —— 不同机型状态栏高度不同
+                // （刘海/挖孔/手势条），写死 34dp 在某些机器上会被挡住或留白。
+                .statusBarsPadding()
+                .padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -862,6 +874,12 @@ private fun InputBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // navigationBarsPadding 放在 Surface **内部的 Row** 上，
+                // 让 Surface 自己一直铺到屏幕底边 —— 导航栏那块也归输入栏着色。
+                //
+                // 反过来把 navigationBarsPadding 加到 Surface 的外层 Modifier 上，
+                // Surface 就只包住内容、不延伸到底，导航栏那条高度会露出背景层，
+                // 表现为「输入框下面漏一行」。
                 .navigationBarsPadding()
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,

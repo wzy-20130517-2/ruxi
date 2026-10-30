@@ -72,7 +72,6 @@ fun RuxiAppRoot(store: AppStore) {
     val characters by store.characters.collectAsState()
     val providers by store.providers.collectAsState()
     val activeProviderId by store.activeProviderId.collectAsState()
-    val promptSettings by store.promptSettings.collectAsState()
     val uiSettings by store.uiSettings.collectAsState()
     val sessions by store.sessions.collectAsState()
 
@@ -222,14 +221,12 @@ fun RuxiAppRoot(store: AppStore) {
             Route.Settings -> SettingsScreen(
                 providers = providers,
                 activeId = activeProviderId,
-                promptSettings = promptSettings,
                 uiSettings = uiSettings,
                 onBack = { route = Route.Home },
                 onAddProvider = { route = Route.ProviderEdit(null) },
                 onEditProvider = { route = Route.ProviderEdit(it) },
                 onDeleteProvider = { store.deleteProvider(it) },
                 onSelectProvider = { store.setActiveProvider(it) },
-                onUpdatePrompt = { store.updatePromptSettings(it) },
                 onUpdateUi = { store.updateUiSettings(it) },
                 onOpenAppearance = { route = Route.Appearance },
             )
@@ -237,14 +234,12 @@ fun RuxiAppRoot(store: AppStore) {
             Route.ProviderSettings -> SettingsScreen(
                 providers = providers,
                 activeId = activeProviderId,
-                promptSettings = promptSettings,
                 uiSettings = uiSettings,
                 onBack = { route = Route.Home },
                 onAddProvider = { route = Route.ProviderEdit(null) },
                 onEditProvider = { route = Route.ProviderEdit(it) },
                 onDeleteProvider = { store.deleteProvider(it) },
                 onSelectProvider = { store.setActiveProvider(it) },
-                onUpdatePrompt = { store.updatePromptSettings(it) },
                 onUpdateUi = { store.updateUiSettings(it) },
                 onOpenAppearance = { route = Route.Appearance },
             )
@@ -271,7 +266,6 @@ fun RuxiAppRoot(store: AppStore) {
                 val initial = r.id?.let { store.characterById(it) }
                 CharacterEditScreen(
                     initial = initial,
-                    defaultHidden = promptSettings.hiddenTemplate,
                     onBack = { route = r.returnTo },
                     onSave = { card ->
                         store.upsertCharacter(card)
@@ -324,7 +318,6 @@ fun RuxiAppRoot(store: AppStore) {
                                     session = snapshot,
                                     userText = text,
                                     userImages = images,
-                                    settings = promptSettings,
                                     replayThinking = provider.replayThinking,
                                 )
                                 runCompletion(
@@ -401,7 +394,6 @@ fun RuxiAppRoot(store: AppStore) {
                                     val messages = PromptEngine.buildAssistReply(
                                         card = card,
                                         session = store.sessionById(session.id) ?: session,
-                                        settings = promptSettings,
                                     )
                                     val sb = StringBuilder()
                                     try {
@@ -479,7 +471,6 @@ fun RuxiAppRoot(store: AppStore) {
                                     session = snapshot,
                                     userText = "",
                                     userImages = emptyList(),
-                                    settings = promptSettings,
                                     replayThinking = provider.replayThinking,
                                 )
                                 runCompletion(

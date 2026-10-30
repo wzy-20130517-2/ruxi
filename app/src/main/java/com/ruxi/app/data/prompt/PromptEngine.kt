@@ -3,7 +3,6 @@ package com.ruxi.app.data.prompt
 import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
-import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Role
 import com.ruxi.app.data.model.Session
 
@@ -24,22 +23,20 @@ object PromptEngine {
      * @param session  当前会话（用来判断是否首轮、拿历史）
      * @param userText 用户本轮输入
      * @param userImages 用户本轮随消息发送的图片
-     * @param settings 全局提示词设置
-     * @return 组装好的消息列表 + 本轮实际使用的隐藏要求（便于界面展示「这轮注入了什么」）
+     * @return 组装好的消息列表
      */
     fun build(
         card: CharacterCard,
         session: Session,
         userText: String,
         userImages: List<AttachedImage>,
-        settings: PromptSettings,
         /** 是否把历史里的思考过程也回传给模型（默认否，省 token） */
         replayThinking: Boolean = false,
     ): BuildResult {
         val messages = mutableListOf<ChatMessage>()
 
         // ── 1. 系统提示词（每轮注入） ──
-        val systemText = composeSystem(card, settings)
+        val systemText = composeSystem(card)
         if (systemText.isNotBlank()) {
             messages += ChatMessage(role = Role.SYSTEM, content = systemText)
         }
@@ -82,31 +79,13 @@ object PromptEngine {
             images = (if (injectCardImages) card.images else emptyList()) + userImages,
         )
 
-        return BuildResult(
-            messages = messages,
-            hiddenUsed = resolveHidden(card, settings),
-        )
-    }
-
-    /** 本轮实际生效的隐藏要求（角色卡优先于全局） */
-    fun resolveHidden(
-        card: CharacterCard,
-        settings: PromptSettings,
-    ): String {
-        if (!settings.hiddenEnabled) return ""
-        return card.hiddenRequirement.ifBlank { settings.hiddenTemplate }
+        return BuildResult(messages = messages)
     }
 
     /**
-     * 拼系统提示词：系统设定 + 用户设定 + 隐藏要求。
-     *
-     * 顺序有讲究：隐藏要求放**最后**。模型的注意力对末尾内容更强，
-     * 放前面容易被大段人设设定淹没。
+     * 拼系统提示词：系统设定 + 用户设定。
      */
-    private fun composeSystem(
-        card: CharacterCard,
-        settings: PromptSettings,
-    ): String {
+    private fun composeSystem(card: CharacterCard): String {
         val parts = mutableListOf<String>()
 
         if (card.systemSetting.isNotBlank()) {
@@ -114,10 +93,6 @@ object PromptEngine {
         }
         if (card.userSetting.isNotBlank()) {
             parts += card.userSetting.trim()
-        }
-        val hidden = resolveHidden(card, settings)
-        if (hidden.isNotBlank()) {
-            parts += hidden
         }
 
         return parts.joinToString("\n\n")
@@ -155,7 +130,6 @@ object PromptEngine {
     fun buildAssistReply(
         card: CharacterCard,
         session: Session,
-        settings: PromptSettings,
         recentTurns: Int = 8,
     ): List<ChatMessage> {
         val recent = session.messages
@@ -214,6 +188,5 @@ object PromptEngine {
     /** 组装结果 */
     data class BuildResult(
         val messages: List<ChatMessage>,
-        val hiddenUsed: String,
     )
 }

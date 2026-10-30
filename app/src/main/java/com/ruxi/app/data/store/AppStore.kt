@@ -3,7 +3,6 @@ package com.ruxi.app.data.store
 import android.content.Context
 import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
-import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.Role
 import com.ruxi.app.data.model.Session
@@ -54,11 +53,6 @@ class AppStore private constructor(context: Context) {
     val sessions: StateFlow<List<Session>> = _sessions.asStateFlow()
 
     // ─────────────── 设置 ───────────────
-    private val _promptSettings = MutableStateFlow(
-        prefs.read(PrefsStore.KEY_PROMPT_SETTINGS, PromptSettings.serializer(), PromptSettings())
-    )
-    val promptSettings: StateFlow<PromptSettings> = _promptSettings.asStateFlow()
-
     private val _uiSettings = MutableStateFlow(
         prefs.read(PrefsStore.KEY_UI_SETTINGS, UiSettings.serializer(), UiSettings())
     )
@@ -255,11 +249,6 @@ class AppStore private constructor(context: Context) {
     }
 
     // ═══════════════ 设置 ═══════════════
-
-    fun updatePromptSettings(settings: PromptSettings) {
-        _promptSettings.value = settings
-        prefs.write(PrefsStore.KEY_PROMPT_SETTINGS, PromptSettings.serializer(), settings)
-    }
 
     fun updateUiSettings(settings: UiSettings) {
         _uiSettings.value = settings

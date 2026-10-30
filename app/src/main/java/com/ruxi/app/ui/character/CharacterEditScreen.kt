@@ -67,13 +67,10 @@ import androidx.compose.material.icons.filled.Delete
  *  2. 提示词（系统设定 / 用户设定 / 隐藏要求）
  *  3. 参考图片（可备注）
  *
- * 「隐藏要求」默认折叠 —— 它是高级项，展开后会显示「留空则用全局模板」的提示，
- * 避免新用户看到一片空白以为必须自己写。
  */
 @Composable
 fun CharacterEditScreen(
     initial: CharacterCard?,
-    defaultHidden: String,
     onBack: () -> Unit,
     onSave: (CharacterCard) -> Unit,
     onPickImage: (android.net.Uri) -> AttachedImage?,
@@ -88,10 +85,8 @@ fun CharacterEditScreen(
     var avatar by remember { mutableStateOf(initial?.avatar) }
     var systemSetting by remember { mutableStateOf(initial?.systemSetting ?: "") }
     var userSetting by remember { mutableStateOf(initial?.userSetting ?: "") }
-    var hidden by remember { mutableStateOf(initial?.hiddenRequirement ?: "") }
     var greeting by remember { mutableStateOf(initial?.greeting ?: "") }
     var images by remember { mutableStateOf(initial?.images ?: emptyList()) }
-    var hiddenExpanded by remember { mutableStateOf(!hidden.isBlank()) }
     var noteEditing by remember { mutableStateOf<AttachedImage?>(null) }
 
     // 对话背景（按角色卡独立）
@@ -151,7 +146,6 @@ fun CharacterEditScreen(
                                 avatar = avatar,
                                 systemSetting = systemSetting,
                                 userSetting = userSetting,
-                                hiddenRequirement = hidden,
                                 greeting = greeting,
                                 images = images,
                                 backgroundImage = bgPath,
@@ -249,60 +243,6 @@ fun CharacterEditScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 minLines = 3,
             )
-
-            // ── 隐藏要求 ──
-            SectionTitle("输出规范 / 隐藏要求")
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable { hiddenExpanded = !hiddenExpanded }
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "高级项 · 留空则使用全局模板",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        text = if (hiddenExpanded) "收起" else "展开",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = RuxiColors.accent,
-                    )
-                }
-                if (hiddenExpanded) {
-                    Spacer(Modifier.height(8.dp))
-                    RuxiTextField(
-                        value = hidden,
-                        onValueChange = { hidden = it },
-                        label = "留空 = 使用全局默认（可在设置里改）",
-                        minLines = 6,
-                    )
-                    if (hidden.isBlank()) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "当前将使用全局模板：",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = defaultHidden.take(180) + if (defaultHidden.length > 180) "…" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = RuxiColors.TextTertiary,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { hidden = defaultHidden }) {
-                        Text("填入全局模板（再自行修改）", color = RuxiColors.accent)
-                    }
-                }
-            }
 
             // ── 开场白 ──
             SectionTitle("开场白（新对话时自动作为第一句）")
@@ -506,7 +446,6 @@ fun CharacterEditScreen(
                         avatar = avatar,
                         systemSetting = systemSetting,
                         userSetting = userSetting,
-                        hiddenRequirement = hidden,
                         greeting = greeting,
                         images = images,
                         backgroundImage = bgPath,

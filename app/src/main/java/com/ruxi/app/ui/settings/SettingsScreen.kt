@@ -45,11 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ruxi.app.data.api.ChatClient
-import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.UiSettings
 import com.ruxi.app.ui.components.Pill
-import com.ruxi.app.ui.components.RuxiTextField
 import com.ruxi.app.ui.components.SectionTitle
 import com.ruxi.app.ui.theme.RuxiColors
 import kotlinx.coroutines.launch
@@ -57,21 +55,19 @@ import kotlinx.coroutines.launch
 /**
  * 设置页（主页）。
  *
- * 分三块：供应商 / 提示词引擎 / 外观。
+ * 分两块：供应商 / 外观。
  * 供应商放在最上面，因为它是「能不能用」的前置条件。
  */
 @Composable
 fun SettingsScreen(
     providers: List<Provider>,
     activeId: String,
-    promptSettings: PromptSettings,
     uiSettings: UiSettings,
     onBack: () -> Unit,
     onAddProvider: () -> Unit,
     onEditProvider: (String) -> Unit,
     onDeleteProvider: (String) -> Unit,
     onSelectProvider: (String) -> Unit,
-    onUpdatePrompt: (PromptSettings) -> Unit,
     onUpdateUi: (UiSettings) -> Unit,
     onOpenAppearance: () -> Unit,
 ) {
@@ -222,28 +218,6 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-
-            // ═══════ 提示词引擎 ═══════
-            SectionTitle("提示词引擎")
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SettingSwitch(
-                    title = "启用隐藏要求",
-                    subtitle = "关闭后就是一个普通角色扮演应用",
-                    checked = promptSettings.hiddenEnabled,
-                    onChange = { onUpdatePrompt(promptSettings.copy(hiddenEnabled = it)) },
-                )
-            }
-
-            SectionTitle("全局隐藏要求模板（角色卡未填时使用）")
-            RuxiTextField(
-                value = promptSettings.hiddenTemplate,
-                onValueChange = { onUpdatePrompt(promptSettings.copy(hiddenTemplate = it)) },
-                label = "留空 = 不附加任何隐藏要求",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                minLines = 8,
-            )
-
-            Spacer(Modifier.height(16.dp))
 
             // ═══════ 外观 ═══════
             SectionTitle("外观")

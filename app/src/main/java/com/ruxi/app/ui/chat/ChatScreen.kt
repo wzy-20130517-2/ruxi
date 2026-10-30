@@ -77,6 +77,13 @@ import java.io.File
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * 对话页。
@@ -325,55 +332,117 @@ fun ChatScreen(
     actionTarget?.let { msg ->
         // 能不能重答：只有 assistant 消息、且不在流式中才有意义
         val canRegenerate = msg.isAssistant && !msg.incomplete && !streaming
-        AlertDialog(
-            onDismissRequest = onDismissMenu,
-            title = {
-                Text(
-                    text = if (msg.isUser) "用户消息" else "AI 回复",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Column {
-                    MenuAction("编辑内容") { onStartEdit(msg) }
-                    if (canRegenerate) {
-                        MenuAction("重新回复") { onRegenerate(msg) }
-                    }
-                    MenuAction("复制文本") {
-                        clipboard.setText(AnnotatedString(msg.content))
-                        context.toast("已复制")
-                        onDismissMenu()
-                    }
-                    MenuAction("删除这条", danger = true) { onDeleteMessage(msg) }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onDismissMenu) { Text("关闭") }
-            },
+        val items = buildList {
+            add(Triple(Icons.Default.Edit, "编辑内容", false) to { onStartEdit(msg) })
+            if (canRegenerate) {
+                add(Triple(Icons.Default.Refresh, "重新回复", false) to { onRegenerate(msg) })
+            }
+            add(Triple(Icons.Default.ContentCopy, "复制文本", false) to {
+                clipboard.setText(AnnotatedString(msg.content))
+                context.toast("已复制")
+                onDismissMenu()
+            })
+            add(Triple(Icons.Default.Delete, "删除这条", true) to { onDeleteMessage(msg) })
+        }
+        MessageActionMenu(
+            items = items,
+            onDismiss = onDismissMenu,
         )
+    }
+}
+
+/**
+ * 悬浮操作菜单。
+ *
+ * 用 Dialog + 透明底 + 右侧浮层，而不是 AlertDialog ——
+ * AlertDialog 自带标题栏和确认按钮，结构上是「对话框」；
+ * 而长按菜单是一组并列的动作，要的是一张浮在内容上的卡片。
+ */
+@Composable
+private fun MessageActionMenu(
+    items: List<Pair<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, Boolean>, () -> Unit>>,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // 点空白处关闭
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .padding(end = 16.dp)
+                    .widthIn(max = 200.dp)
+                    // 卡片自身消费点击，避免穿透到遮罩层
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = {},
+                    ),
+            ) {
+                Column(Modifier.padding(vertical = 6.dp)) {
+                    items.forEachIndexed { idx, (meta, action) ->
+                        val (icon, label, danger) = meta
+                        if (idx > 0) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                            )
+                        }
+                        MenuAction(
+                            icon = icon,
+                            label = label,
+                            danger = danger,
+                            onClick = action,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 /** 操作菜单里的一行 */
 @Composable
 private fun MenuAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val tint = if (danger) MaterialTheme.colorScheme.error
+    else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 13.dp),
+            .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (danger) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurface,
+            color = tint,
         )
     }
 }

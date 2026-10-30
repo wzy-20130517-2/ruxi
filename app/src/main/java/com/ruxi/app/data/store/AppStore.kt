@@ -2,7 +2,7 @@ package com.ruxi.app.data.store
 
 import android.content.Context
 import com.ruxi.app.data.model.CharacterCard
-import ChatMessage
+import com.ruxi.app.data.model.ChatMessage
 import com.ruxi.app.data.model.PromptSettings
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.Role

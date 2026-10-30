@@ -45,11 +45,39 @@ object PromptEngine {
         //
         // 只取每组当前选中的那个版本。用户编辑/重答产生的其它版本
         // 只是备选，不该一起塞进上下文（否则模型会看到同一句话说了好几遍）。
+        //
+        // 角色卡参考图**只在首轮发一次**，之后的历史消息里换成文字占位。
+        // 不这么做的话，每一轮都会把同一批图重新传给模型：
+        // 既费 token，又容易让它反复描述已经说过的东西。
+        //
+        // ⚠️ 占位符只加在**已被替换掉图**的那条消息上。
+        // 首轮那轮图片是照常发送的，不该同时出现「图 + 占位符」的自相矛盾。
+        val cardPaths = card.images.mapTo(mutableSetOf()) { it.path }
+        val seenCardImages = mutableSetOf<String>()
+
         session.visibleMessages().forEach { msg ->
             if (msg.isError) return@forEach          // 失败提示不进上下文
             if (msg.content.isBlank() && msg.images.isEmpty()) return@forEach
 
+            // 把角色卡图分成「本轮要带」「换占位符」两部分。
+            // 用户自己发的图（不在角色卡里）不受影响，照常传。
+            val cardImgs = msg.images.filter { it.path in cardPaths }
+            val userImgs = msg.images.filterNot { it.path in cardPaths }
+
+            val keepImages = cardImgs.filter { it.path !in seenCardImages }
+            seenCardImages += cardImgs.map { it.path }
+
+            val dropped = cardImgs.size - keepImages.size
+            val content = if (dropped > 0) {
+                val placeholder = "[此前已注入的 $dropped 张角色参考图，此处不再重复发送]"
+                listOf(msg.content, placeholder).filter { it.isNotBlank() }.joinToString("\n\n")
+            } else {
+                msg.content
+            }
+
             messages += msg.copy(
+                content = content,
+                images = keepImages + userImgs,
                 // 思考过程默认不回传：它通常很长，且模型并不需要重读自己的旧思路。
                 // 需要时可以开（有些场景确实要求它「记得自己想过什么」）。
                 reasoning = if (replayThinking) msg.reasoning else "",
@@ -62,9 +90,9 @@ object PromptEngine {
         // Anthropic 协议硬性要求 user/assistant 严格交替，
         // 两条连续的 user 消息会被直接拒绝（"roles must alternate"）。
         // 所以把图片和备注合并进本轮这条消息里。
+        //
         // 判断依据是「历史里还有没有带着角色卡图片的消息」，而不是一个开关位。
         // 用户删掉首轮消息后，历史里那些路径就没了，下一轮自然重新注入。
-        val cardPaths = card.images.mapTo(mutableSetOf()) { it.path }
         val alreadyInjected = cardPaths.isNotEmpty() &&
             session.messages.any { msg -> msg.images.any { it.path in cardPaths } }
         val injectCardImages = !alreadyInjected && card.images.isNotEmpty()

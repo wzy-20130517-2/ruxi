@@ -39,6 +39,13 @@ data class CharacterCard(
     val backgroundBlur: Int = 0,
     /** 背景透明度 0~100（%） */
     val backgroundOpacity: Int = 100,
+    /**
+     * 该角色的基础音色。
+     *
+     * 只写「这个人声音本身是什么样」—— 年龄、音色、语速、口音。
+     * 场景和语气不写在这里，它们从每条回复的旁白里动态提取。
+     */
+    val ttsVoice: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {

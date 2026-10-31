@@ -20,8 +20,10 @@ import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.Role
+import com.ruxi.app.data.model.TtsConfig
 import com.ruxi.app.data.prompt.PromptEngine
 import com.ruxi.app.data.store.AppStore
+import com.ruxi.app.data.tts.TtsClient
 import com.ruxi.app.ui.character.CharacterEditScreen
 import com.ruxi.app.ui.chat.ChatScreen
 import com.ruxi.app.ui.home.HomeScreen
@@ -74,6 +76,7 @@ fun RuxiAppRoot(store: AppStore) {
     val providers by store.providers.collectAsState()
     val activeProviderId by store.activeProviderId.collectAsState()
     val uiSettings by store.uiSettings.collectAsState()
+    val ttsConfig by store.ttsConfig.collectAsState()
     val sessions by store.sessions.collectAsState()
 
     // 导航栈：栈顶是当前页，返回就是弹栈。
@@ -111,6 +114,68 @@ fun RuxiAppRoot(store: AppStore) {
     var streamingReasoning by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var streamJob by remember { mutableStateOf<Job?>(null) }
+    // 朗读任务。新一段开口前先掐掉旧的，避免两个声音叠在一起
+    var speakJob by remember { mutableStateOf<Job?>(null) }
+
+    /**
+     * 朗读一条助手回复。
+     *
+     * ## 文本怎么分
+     * 按用户设的标记（默认双引号）把回复切成两半：
+     * - **标记内** → 朗读文本，交给 `assistant` 角色
+     * - **标记外** → 旁白，从里面提炼场景和语气
+     *
+     * 两者天然互补：念的是台词，风格来自旁白，不会重复也不会漏。
+     *
+     * ## 风格怎么拼
+     * 基础音色（角色卡上填的）+ 场景 + 语气，一起放进 `user` 角色。
+     * `user` 才是控制风格的那个字段，`assistant` 只放要念的内容。
+     */
+    fun maybeSpeak(content: String, card: CharacterCard) {
+        val cfg = store.ttsConfig.value
+        if (!cfg.enabled) return
+
+        val (spoken, aside) = TtsConfig.split(content, cfg.extractMark)
+        if (spoken.isBlank()) return
+
+        val style = buildStyle(
+            voice = card.ttsVoice,
+            scene = TtsConfig.sceneOf(aside),
+            mood = TtsConfig.moodOf(aside, content),
+        )
+
+        speakJob?.cancel()
+        speakJob = scope.launch {
+            TtsClient.speak(spoken, style, cfg).collect { ev ->
+                if (ev is TtsClient.TtsEvent.Failed) errorText = ev.message
+            }
+        }
+    }
+
+    /**
+     * 拼 `user` 角色的内容：基础音色 + 场景 + 语气。
+     *
+     * 场景和语气本来就是旁白里的句子，直接接在后面读起来就是人话。
+     * 不加「场景：」「语气：」这种标签 —— TTS 会照着念标签。
+     */
+    fun buildStyle(voice: String, scene: String, mood: String): String {
+        val sb = StringBuilder()
+        val v = voice.trim().trimEnd('。', '，')
+        if (v.isNotBlank()) sb.append(v).append('。')
+
+        val s = scene.trim().trimEnd('，', '。', '、', ' ')
+        val m = mood.trim().trimEnd('。', '，')
+
+        if (s.isNotBlank()) sb.append(s)
+        if (m.isNotBlank()) {
+            if (s.isNotBlank()) sb.append("，语气").append(m).append('。')
+            else sb.append("语气").append(m).append('。')
+        } else if (s.isNotBlank()) {
+            sb.append('。')
+        }
+
+        return sb.toString().trim().ifBlank { "请用自然的声音念这句话。" }
+    }
 
     /**
      * 发起一次补全请求（发送新消息 / 重新回复 共用）。
@@ -251,6 +316,11 @@ fun RuxiAppRoot(store: AppStore) {
                 }
                 streamingText = ""
                 streamingReasoning = ""
+
+                // 只在成功拿到回复时朗读。失败时不念 —— 半截内容念出来没意义。
+                if (!failed && finalText.isNotBlank()) {
+                    maybeSpeak(finalText, card)
+                }
             }
         }
     }
@@ -308,6 +378,8 @@ fun RuxiAppRoot(store: AppStore) {
                 providers = providers,
                 activeId = activeProviderId,
                 uiSettings = uiSettings,
+                ttsConfig = ttsConfig,
+                onUpdateTts = { store.updateTtsConfig(it) },
                 onBack = { goBack() },
                 onAddProvider = { navigateTo(Route.ProviderEdit(null)) },
                 onEditProvider = { navigateTo(Route.ProviderEdit(it)) },
@@ -321,6 +393,8 @@ fun RuxiAppRoot(store: AppStore) {
                 providers = providers,
                 activeId = activeProviderId,
                 uiSettings = uiSettings,
+                ttsConfig = ttsConfig,
+                onUpdateTts = { store.updateTtsConfig(it) },
                 onBack = { goBack() },
                 onAddProvider = { navigateTo(Route.ProviderEdit(null)) },
                 onEditProvider = { navigateTo(Route.ProviderEdit(it)) },

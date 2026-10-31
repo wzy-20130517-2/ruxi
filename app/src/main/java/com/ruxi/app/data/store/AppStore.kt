@@ -7,6 +7,7 @@ import com.ruxi.app.data.model.ChatMessage
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.Role
 import com.ruxi.app.data.model.Session
+import com.ruxi.app.data.model.TtsConfig
 import com.ruxi.app.data.model.UiSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +61,16 @@ class AppStore private constructor(context: Context) {
         prefs.read(PrefsStore.KEY_UI_SETTINGS, UiSettings.serializer(), UiSettings())
     )
     val uiSettings: StateFlow<UiSettings> = _uiSettings.asStateFlow()
+
+    private val _ttsConfig = MutableStateFlow(
+        prefs.read(PrefsStore.KEY_TTS_CONFIG, TtsConfig.serializer(), TtsConfig())
+    )
+    val ttsConfig: StateFlow<TtsConfig> = _ttsConfig.asStateFlow()
+
+    fun updateTtsConfig(cfg: TtsConfig) {
+        _ttsConfig.value = cfg
+        prefs.write(PrefsStore.KEY_TTS_CONFIG, TtsConfig.serializer(), cfg)
+    }
 
     // ═══════════════ 角色卡操作 ═══════════════
 

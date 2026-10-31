@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ruxi.app.data.api.ChatClient
 import com.ruxi.app.data.model.Provider
+import com.ruxi.app.data.model.TtsConfig
 import com.ruxi.app.data.model.UiSettings
 import com.ruxi.app.ui.components.Pill
 import com.ruxi.app.ui.components.SectionTitle
@@ -63,6 +64,8 @@ fun SettingsScreen(
     providers: List<Provider>,
     activeId: String,
     uiSettings: UiSettings,
+    ttsConfig: TtsConfig,
+    onUpdateTts: (TtsConfig) -> Unit,
     onBack: () -> Unit,
     onAddProvider: () -> Unit,
     onEditProvider: (String) -> Unit,
@@ -215,6 +218,76 @@ fun SettingsScreen(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("添加供应商")
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // ═══════ 朗读 ═══════
+            SectionTitle("朗读")
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                SettingSwitch(
+                    title = "朗读助手回复",
+                    subtitle = "生成完自动念出来",
+                    checked = ttsConfig.enabled,
+                    onChange = { onUpdateTts(ttsConfig.copy(enabled = it)) },
+                )
+
+                if (ttsConfig.enabled) {
+                    Spacer(Modifier.height(10.dp))
+
+                    Text(
+                        text = "模型",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TtsConfig.MODELS.forEach { (id, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onUpdateTts(ttsConfig.copy(model = id)) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = ttsConfig.model == id,
+                                onClick = { onUpdateTts(ttsConfig.copy(model = id)) },
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    if (ttsConfig.model == TtsConfig.MODEL_TTS) {
+                        Spacer(Modifier.height(8.dp))
+                        RuxiTextField(
+                            value = ttsConfig.voice,
+                            onValueChange = { onUpdateTts(ttsConfig.copy(voice = it)) },
+                            label = "内置音色名（如 Chloe / Dean）",
+                            minLines = 1,
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = "从哪个标记里提取朗读文本",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "标记里的内容会被念出来，标记外的旁白用来判断场景和语气",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    RuxiTextField(
+                        value = ttsConfig.extractMark,
+                        onValueChange = { onUpdateTts(ttsConfig.copy(extractMark = it)) },
+                        label = "默认 \"（双引号），也可填 「」 或 （）",
+                        minLines = 1,
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))

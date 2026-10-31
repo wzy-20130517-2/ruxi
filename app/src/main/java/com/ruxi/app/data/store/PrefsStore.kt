@@ -68,5 +68,6 @@ class PrefsStore(context: Context) {
         const val KEY_SESSIONS = "sessions"
         const val KEY_ACTIVE_PROVIDER = "active_provider"
         const val KEY_UI_SETTINGS = "ui_settings"
+        const val KEY_TTS_CONFIG = "tts_config"
     }
 }

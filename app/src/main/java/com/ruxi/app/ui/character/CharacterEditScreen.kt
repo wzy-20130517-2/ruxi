@@ -90,6 +90,7 @@ fun CharacterEditScreen(
     var systemSetting by remember { mutableStateOf(initial?.systemSetting ?: "") }
     var userSetting by remember { mutableStateOf(initial?.userSetting ?: "") }
     var greeting by remember { mutableStateOf(initial?.greeting ?: "") }
+    var ttsVoice by remember { mutableStateOf(initial?.ttsVoice ?: "") }
     var images by remember { mutableStateOf(initial?.images ?: emptyList()) }
     var noteEditing by remember { mutableStateOf<AttachedImage?>(null) }
 
@@ -179,6 +180,7 @@ fun CharacterEditScreen(
                                 systemSetting = systemSetting,
                                 userSetting = userSetting,
                                 greeting = greeting,
+                                ttsVoice = ttsVoice,
                                 images = images,
                                 backgroundImage = bgPath,
                                 backgroundDim = bgDim,
@@ -282,6 +284,16 @@ fun CharacterEditScreen(
                 value = greeting,
                 onValueChange = { greeting = it },
                 label = "角色说的第一句话…",
+                modifier = Modifier.padding(horizontal = 16.dp),
+                minLines = 3,
+            )
+
+            // ── 朗读音色 ──
+            SectionTitle("朗读音色（这个角色说话的声音）")
+            RuxiTextField(
+                value = ttsVoice,
+                onValueChange = { ttsVoice = it },
+                label = "比如：少年，十岁左右，声音清亮…（场景和语气会自动从回复里补）",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 minLines = 3,
             )
@@ -479,6 +491,7 @@ fun CharacterEditScreen(
                         systemSetting = systemSetting,
                         userSetting = userSetting,
                         greeting = greeting,
+                        ttsVoice = ttsVoice,
                         images = images,
                         backgroundImage = bgPath,
                         backgroundDim = bgDim,

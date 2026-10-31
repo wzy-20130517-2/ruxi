@@ -29,6 +29,7 @@ import com.ruxi.app.ui.settings.AppearanceScreen
 import com.ruxi.app.ui.settings.ProviderEditScreen
 import com.ruxi.app.ui.settings.SettingsScreen
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 

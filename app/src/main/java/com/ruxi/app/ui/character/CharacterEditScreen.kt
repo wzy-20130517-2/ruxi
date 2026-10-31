@@ -102,6 +102,7 @@ fun CharacterEditScreen(
     // 选图后要解码 + 压缩 + 写盘，都是同步 IO。原图动辄几 MB，
     // 放主线程解码会明显卡顿，所以统一丢到 IO 线程再回主线程更新状态。
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val bgPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -123,10 +124,21 @@ fun CharacterEditScreen(
     ) { uris ->
         if (uris.isNotEmpty()) {
             scope.launch {
-                val added = withContext(Dispatchers.IO) {
-                    uris.mapNotNull { onPickImage(it) }
+                val (added, failed) = withContext(Dispatchers.IO) {
+                    var bad = 0
+                    val list = uris.mapNotNull {
+                        onPickImage(it) ?: run { bad++; null }
+                    }
+                    list to bad
                 }
                 images = images + added
+                if (failed > 0) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "有 $failed 张图片读取失败（可能已被移动或删除）",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
     }

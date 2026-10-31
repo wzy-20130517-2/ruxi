@@ -55,10 +55,28 @@ class ImageStore(context: Context) {
             import(context, uri)?.let { path -> AttachedImage(path = path) }
         }
 
+    /** 批量导入，同时把失败的个数带出来（UI 要能告诉用户「有几张没成功」） */
+    fun importAllCounting(context: Context, uris: List<Uri>): Pair<List<AttachedImage>, Int> {
+        val ok = mutableListOf<AttachedImage>()
+        var failed = 0
+        uris.forEach { uri ->
+            val p = import(context, uri)
+            if (p != null) ok += AttachedImage(path = p) else failed++
+        }
+        return ok to failed
+    }
+
     /**
      * 把已存在的图片文件就地压缩（一次性迁移用）。
      *
      * 返回压缩后的新路径；本来就够小或压缩失败时返回原路径。
+     *
+     * ⚠️ 原文件**不能删**。同一张图可能被角色卡和消息同时引用，
+     * 迁移按引用逐条处理，第一次压缩后如果删了原文件，第二次再遇到
+     * 同一个路径就找不到源文件、只能返回旧路径 —— 结果是引用指向一个
+     * 已被删除的文件，图片变成空白。
+     *
+     * 所以这里只生成新文件、不动原文件，由迁移结束后统一清理没人引用的旧文件。
      */
     fun compressExisting(path: String): String {
         val src = File(path)
@@ -76,7 +94,6 @@ class ImageStore(context: Context) {
                 target.delete()
                 return path
             }
-            src.delete()
             target.absolutePath
         } catch (e: Exception) {
             path
@@ -92,19 +109,28 @@ class ImageStore(context: Context) {
 
     // ─────────────────────── 解码 ───────────────────────
 
-    /** 两遍解码：先读尺寸算采样率，再按目标长边解码，避免整张大图进内存 */
+    /**
+     * 读 Uri 指向的图，按长边上限采样解码。
+     *
+     * ⚠️ 必须**只打开一次输入流**。
+     * `GetMultipleContents` 返回的 Uri 往往是「一次性」的（部分相册/文件管理器的
+     * provider 只保证单次可读），第一遍读尺寸、第二遍读像素的话，第二次 openInputStream
+     * 直接失败 —— 表现为「选图没反应、图加不上」。
+     *
+     * 所以先把整个字节读进内存，再从内存数组解码两次（尺寸探测 + 实际像素）。
+     * 代价是原图会完整进一次内存，但这是唯一稳妥的做法。
+     */
     private fun decodeScaled(context: Context, uri: Uri): Bitmap? {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+        if (bytes.isEmpty()) return null
+
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, bounds)
-        } ?: return null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
 
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight)
         }
-        return context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
     }
 
     private fun decodeScaledFile(file: File): Bitmap? {

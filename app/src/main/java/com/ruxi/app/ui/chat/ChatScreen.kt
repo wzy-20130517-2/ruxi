@@ -174,10 +174,18 @@ fun ChatScreen(
     ) { uris ->
         if (uris.isNotEmpty()) {
             pickScope.launch {
-                val added = withContext(Dispatchers.IO) {
-                    uris.mapNotNull { onPickImage(it) }
+                val (added, failed) = withContext(Dispatchers.IO) {
+                    var ok = 0
+                    var bad = 0
+                    val list = uris.mapNotNull {
+                        onPickImage(it)?.also { ok++ } ?: run { bad++; null }
+                    }
+                    list to bad
                 }
                 pendingImages = pendingImages + added
+                if (failed > 0) {
+                    context.toast("有 $failed 张图片读取失败（可能已被移动或删除）")
+                }
             }
         }
     }

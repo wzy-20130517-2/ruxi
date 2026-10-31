@@ -1,6 +1,7 @@
 package com.ruxi.app.data.store
 
 import android.content.Context
+import com.ruxi.app.data.model.AttachedImage
 import com.ruxi.app.data.model.CharacterCard
 import com.ruxi.app.data.model.ChatMessage
 import com.ruxi.app.data.model.Provider
@@ -271,6 +272,10 @@ class AppStore private constructor(context: Context) {
     fun importImages(uris: List<android.net.Uri>): List<com.ruxi.app.data.model.AttachedImage> =
         imageStore.importAll(appContext, uris)
 
+    /** 批量导入，返回 (成功的图, 失败张数) */
+    fun importImagesCounting(uris: List<android.net.Uri>): Pair<List<com.ruxi.app.data.model.AttachedImage>, Int> =
+        imageStore.importAllCounting(appContext, uris)
+
     fun deleteImageFile(path: String) = imageStore.delete(path)
 
     /**
@@ -287,29 +292,46 @@ class AppStore private constructor(context: Context) {
         val oldChars = _characters.value
         val oldSessions = _sessions.value
 
-        val newChars = oldChars.map { c ->
-            c.copy(images = c.images.map { img ->
-                img.copy(path = imageStore.compressExisting(img.path))
-            })
+        // 先把所有出现过的图片路径收集起来，逐张压缩一次，记下 旧路径 -> 新路径。
+        //
+        // ⚠️ 必须先去重再压缩。同一张图会被角色卡和消息同时引用，
+        // 按引用逐条压缩的话，第二次处理同一个路径时源文件可能已被处理过，
+        // 结果拿不到新路径、引用还停在旧值上（图就丢了）。
+        val allPaths = mutableSetOf<String>()
+        oldChars.forEach { c -> c.images.forEach { allPaths += it.path } }
+        oldSessions.forEach { s ->
+            s.messages.forEach { m -> m.images.forEach { allPaths += it.path } }
         }
+        val remap = allPaths.associateWith { imageStore.compressExisting(it) }
+
+        fun fix(img: AttachedImage): AttachedImage =
+            remap[img.path]?.let { img.copy(path = it) } ?: img
+
+        val newChars = oldChars.map { c -> c.copy(images = c.images.map(::fix)) }
         val newSessions = oldSessions.map { s ->
-            s.copy(messages = s.messages.map { m ->
-                m.copy(images = m.images.map { img ->
-                    img.copy(path = imageStore.compressExisting(img.path))
-                })
-            })
+            s.copy(messages = s.messages.map { m -> m.copy(images = m.images.map(::fix)) })
         }
 
-        val charsChanged = newChars != oldChars
-        val sessionsChanged = newSessions != oldSessions
-        if (charsChanged) {
+        if (newChars != oldChars) {
             _characters.value = newChars
             prefs.write(PrefsStore.KEY_CHARACTERS, ListSerializer(CharacterCard.serializer()), newChars)
         }
-        if (sessionsChanged) {
+        if (newSessions != oldSessions) {
             _sessions.value = newSessions
             prefs.write(PrefsStore.KEY_SESSIONS, ListSerializer(Session.serializer()), newSessions)
         }
+
+        // 引用改写完、落盘之后，再删掉没人引用的旧文件。
+        // 顺序不能反：先删后写的话，中途崩溃会留下指向已删文件的引用。
+        val stillUsed = mutableSetOf<String>()
+        newChars.forEach { c -> c.images.forEach { stillUsed += it.path } }
+        newSessions.forEach { s ->
+            s.messages.forEach { m -> m.images.forEach { stillUsed += it.path } }
+        }
+        remap.forEach { (oldPath, newPath) ->
+            if (oldPath != newPath && oldPath !in stillUsed) imageStore.delete(oldPath)
+        }
+
         prefs.writeString(KEY_IMAGE_MIGRATED, "1")
     }
 

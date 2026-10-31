@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.ruxi.app.data.api.ChatClient
 import com.ruxi.app.data.model.Provider
 import com.ruxi.app.data.model.TtsConfig
+import com.ruxi.app.data.model.TtsRuleSet
 import com.ruxi.app.data.model.UiSettings
 import com.ruxi.app.ui.components.Pill
 import com.ruxi.app.ui.components.RuxiTextField
@@ -272,23 +274,75 @@ fun SettingsScreen(
 
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        text = "从哪个标记里提取朗读文本",
+                        text = "朗读文本提取规则",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        text = "标记里的内容会被念出来，标记外的旁白用来判断场景和语气",
+                        text = "规则圈出的内容会被念出来，圈外的旁白用来判断场景和语气。多条规则同时生效。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    RuxiTextField(
-                        value = ttsConfig.extractMark,
-                        onValueChange = { onUpdateTts(ttsConfig.copy(extractMark = it)) },
-                        label = "默认 \"（双引号），也可填 「」 或 （）",
-                        minLines = 1,
-                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    ttsConfig.ruleSet.rules.forEachIndexed { idx, rule ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = rule.enabled,
+                                onCheckedChange = { on ->
+                                    val list = ttsConfig.ruleSet.rules.toMutableList()
+                                    list[idx] = rule.copy(enabled = on)
+                                    onUpdateTts(ttsConfig.copy(ruleSet = ttsConfig.ruleSet.copy(rules = list)))
+                                },
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = rule.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                val hint = TtsRuleSet.RULE_HINTS[rule.name]
+                                if (hint != null) {
+                                    Text(
+                                        text = hint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = ttsConfig.ruleSet.fallbackToWhole,
+                            onCheckedChange = {
+                                onUpdateTts(ttsConfig.copy(ruleSet = ttsConfig.ruleSet.copy(fallbackToWhole = it)))
+                            },
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = "没有匹配时整段都念",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "回复里没有引号时，说明整条都是说话内容",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
 

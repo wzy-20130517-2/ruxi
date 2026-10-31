@@ -146,7 +146,7 @@ fun RuxiAppRoot(store: AppStore) {
      * 朗读一条助手回复。
      *
      * ## 文本怎么分
-     * 按用户设的标记（默认双引号）把回复切成两半：
+     * 按规则集（默认中英文双引号 + 直角引号）把回复切成两半：
      * - **标记内** → 朗读文本，交给 `assistant` 角色
      * - **标记外** → 旁白，从里面提炼场景和语气
      *
@@ -160,7 +160,9 @@ fun RuxiAppRoot(store: AppStore) {
         val cfg = store.ttsConfig.value
         if (!cfg.enabled) return
 
-        val (spoken, aside) = TtsConfig.split(content, cfg.extractMark)
+        val split = cfg.ruleSet.split(content)
+        val spoken = split.spoken
+        val aside = split.aside
         if (spoken.isBlank()) return
 
         val style = buildStyle(

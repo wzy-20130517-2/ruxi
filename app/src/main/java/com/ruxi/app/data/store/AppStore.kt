@@ -273,8 +273,50 @@ class AppStore private constructor(context: Context) {
 
     fun deleteImageFile(path: String) = imageStore.delete(path)
 
+    /**
+     * 一次性迁移：把已有的大图压掉。
+     *
+     * 早期版本选图是原样复制的，相册里 3MB 的图就存 3MB。这些图每轮都要
+     * base64 塞进请求体，实测单张 3MB 上传要 130 秒 —— 首字延迟被拖到几十秒。
+     *
+     * 迁移在后台线程跑，不阻塞启动；跑完把引用路径一并改掉。
+     * 用 SharedPreferences 里的标记位保证只跑一次。
+     */
+    fun migrateCompressImages() {
+        if (prefs.readString(KEY_IMAGE_MIGRATED) == "1") return
+        val oldChars = _characters.value
+        val oldSessions = _sessions.value
+
+        val newChars = oldChars.map { c ->
+            c.copy(images = c.images.map { img ->
+                img.copy(path = imageStore.compressExisting(img.path))
+            })
+        }
+        val newSessions = oldSessions.map { s ->
+            s.copy(messages = s.messages.map { m ->
+                m.copy(images = m.images.map { img ->
+                    img.copy(path = imageStore.compressExisting(img.path))
+                })
+            })
+        }
+
+        val charsChanged = newChars != oldChars
+        val sessionsChanged = newSessions != oldSessions
+        if (charsChanged) {
+            _characters.value = newChars
+            prefs.write(PrefsStore.KEY_CHARACTERS, ListSerializer(CharacterCard.serializer()), newChars)
+        }
+        if (sessionsChanged) {
+            _sessions.value = newSessions
+            prefs.write(PrefsStore.KEY_SESSIONS, ListSerializer(Session.serializer()), newSessions)
+        }
+        prefs.writeString(KEY_IMAGE_MIGRATED, "1")
+    }
+
     companion object {
         @Volatile
+        private const val KEY_IMAGE_MIGRATED = "image_compressed_v1"
+
         private var instance: AppStore? = null
 
         fun get(context: Context): AppStore =

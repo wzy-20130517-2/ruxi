@@ -38,6 +38,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -95,14 +99,21 @@ fun CharacterEditScreen(
     var bgBlur by remember { mutableStateOf(initial?.backgroundBlur ?: 0) }
     var bgOpacity by remember { mutableStateOf(initial?.backgroundOpacity ?: 100) }
 
+    // 选图后要解码 + 压缩 + 写盘，都是同步 IO。原图动辄几 MB，
+    // 放主线程解码会明显卡顿，所以统一丢到 IO 线程再回主线程更新状态。
+    val scope = rememberCoroutineScope()
+
     val bgPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            onPickBackground(uri)?.let { newPath ->
-                val old = bgPath
-                bgPath = newPath
-                if (old.isNotBlank()) onRemoveBackground(old)
+            scope.launch {
+                val newPath = withContext(Dispatchers.IO) { onPickBackground(uri) }
+                if (newPath != null) {
+                    val old = bgPath
+                    bgPath = newPath
+                    if (old.isNotBlank()) withContext(Dispatchers.IO) { onRemoveBackground(old) }
+                }
             }
         }
     }
@@ -111,15 +122,24 @@ fun CharacterEditScreen(
         ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            val added = uris.mapNotNull { onPickImage(it) }
-            images = images + added
+            scope.launch {
+                val added = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { onPickImage(it) }
+                }
+                images = images + added
+            }
         }
     }
 
     val avatarPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
-        if (uri != null) onPickImage(uri)?.let { avatar = it.path }
+        if (uri != null) {
+            scope.launch {
+                val img = withContext(Dispatchers.IO) { onPickImage(uri) }
+                if (img != null) avatar = img.path
+            }
+        }
     }
 
     Scaffold(

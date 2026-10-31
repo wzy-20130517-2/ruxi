@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +68,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ruxi.app.data.model.AttachedImage
@@ -163,10 +167,19 @@ fun ChatScreen(
     var menuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    // 选图 = 解码 + 压缩 + 写盘，同步 IO。放主线程会卡 UI，丢到 IO 线程。
+    val pickScope = rememberCoroutineScope()
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
     ) { uris ->
-        if (uris.isNotEmpty()) pendingImages = pendingImages + uris.mapNotNull { onPickImage(it) }
+        if (uris.isNotEmpty()) {
+            pickScope.launch {
+                val added = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { onPickImage(it) }
+                }
+                pendingImages = pendingImages + added
+            }
+        }
     }
 
     // 新内容出现时滚到底。

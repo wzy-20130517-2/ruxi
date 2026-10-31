@@ -70,7 +70,17 @@ object RequestBuilder {
                 messages.forEach { msg ->
                     add(buildJsonObject {
                         put("role", msg.role)
-                        if (msg.images.isEmpty()) {
+                        // 先算出真正能发出去的图：读不到的（文件被删/路径失效）直接跳过。
+                        // 一张坏图会让上游整条请求报 invalid_request_error，拖死整个对话。
+                        val usable = msg.images.mapNotNull { img ->
+                            toDataUrl(img)?.let { url ->
+                                buildJsonObject {
+                                    put("type", "image_url")
+                                    putJsonObject("image_url") { put("url", url) }
+                                }
+                            }
+                        }
+                        if (usable.isEmpty()) {
                             put("content", msg.content)
                         } else {
                             // 多模态：content 是数组
@@ -81,14 +91,7 @@ object RequestBuilder {
                                         put("text", msg.content)
                                     })
                                 }
-                                msg.images.forEach { img ->
-                                    add(buildJsonObject {
-                                        put("type", "image_url")
-                                        putJsonObject("image_url") {
-                                            put("url", toDataUrl(img))
-                                        }
-                                    })
-                                }
+                                usable.forEach { add(it) }
                             })
                         }
                     })
@@ -139,20 +142,23 @@ object RequestBuilder {
                 turns.forEach { msg ->
                     add(buildJsonObject {
                         put("role", msg.role)
-                        if (msg.images.isEmpty()) {
+                        val usable = msg.images.mapNotNull { img ->
+                            readBase64(img.path)?.let { data ->
+                                buildJsonObject {
+                                    put("type", "image")
+                                    putJsonObject("source") {
+                                        put("type", "base64")
+                                        put("media_type", mediaTypeOf(img.path))
+                                        put("data", data)
+                                    }
+                                }
+                            }
+                        }
+                        if (usable.isEmpty()) {
                             put("content", msg.content)
                         } else {
                             put("content", buildJsonArray {
-                                msg.images.forEach { img ->
-                                    add(buildJsonObject {
-                                        put("type", "image")
-                                        putJsonObject("source") {
-                                            put("type", "base64")
-                                            put("media_type", mediaTypeOf(img.path))
-                                            put("data", readBase64(img.path))
-                                        }
-                                    })
-                                }
+                                usable.forEach { add(it) }
                                 if (msg.content.isNotBlank()) {
                                     add(buildJsonObject {
                                         put("type", "text")
@@ -170,15 +176,28 @@ object RequestBuilder {
 
     // ─────────────────────── 工具 ───────────────────────
 
-    /** 读文件转 data URL。失败返回空串（调用方会得到一张空图，但不会崩） */
-    private fun toDataUrl(img: AttachedImage): String = runCatching {
-        val bytes = File(img.path).readBytes()
+    /**
+     * 读文件转 data URL。读不到（文件被删/路径失效）返回 null。
+     *
+     * ⚠️ 不能返回空串。空串会生成 `"url": ""`，上游会以
+     * `param: image_url / invalid_request_error` 整条拒绝请求 ——
+     * 一张坏图能让整个对话再也发不出去。调用方必须跳过 null 的那些。
+     */
+    private fun toDataUrl(img: AttachedImage): String? = runCatching {
+        val f = File(img.path)
+        if (!f.exists()) return@runCatching null
+        val bytes = f.readBytes()
+        if (bytes.isEmpty()) return@runCatching null
         "data:${mediaTypeOf(img.path)};base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
-    }.getOrDefault("")
+    }.getOrNull()
 
-    private fun readBase64(path: String): String = runCatching {
-        Base64.encodeToString(File(path).readBytes(), Base64.NO_WRAP)
-    }.getOrDefault("")
+    private fun readBase64(path: String): String? = runCatching {
+        val f = File(path)
+        if (!f.exists()) return@runCatching null
+        val bytes = f.readBytes()
+        if (bytes.isEmpty()) return@runCatching null
+        Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }.getOrNull()
 
     private fun mediaTypeOf(path: String): String = when {
         path.endsWith(".png", true) -> "image/png"

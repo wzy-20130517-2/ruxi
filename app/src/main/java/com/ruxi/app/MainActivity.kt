@@ -22,6 +22,9 @@ class MainActivity : ComponentActivity() {
         // 一次性把历史大图压掉。放后台线程，不拖慢启动；
         // 只有第一次装新版时会真的干活，之后靠标记位直接返回。
         lifecycleScope.launch(Dispatchers.IO) {
+            // 先清失效引用，再压缩 —— 顺序反了会把「指向已删文件」的路径
+            // 当成待压缩的源，白跑一遍。
+            runCatching { store.pruneMissingImages() }
             runCatching { store.migrateCompressImages() }
         }
 

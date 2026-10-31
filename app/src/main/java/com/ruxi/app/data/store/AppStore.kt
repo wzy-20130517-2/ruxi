@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.builtins.ListSerializer
+import java.io.File
 import java.util.UUID
 
 /**
@@ -287,6 +288,41 @@ class AppStore private constructor(context: Context) {
      * 迁移在后台线程跑，不阻塞启动；跑完把引用路径一并改掉。
      * 用 SharedPreferences 里的标记位保证只跑一次。
      */
+    /**
+     * 清掉历史里指向已不存在文件的图片引用。
+     *
+     * 之前几次图片处理的 bug 留下了失效路径（文件删了、引用还在）。
+     * 请求组装时虽然会跳过读不到的图，但历史里留着这些死引用
+     * 会让「这条消息带几张图」的判断一直不准（比如角色卡图重注入逻辑）。
+     *
+     * 每次启动跑一遍，很便宜（只是 exists 检查）。
+     */
+    fun pruneMissingImages() {
+        val oldChars = _characters.value
+        val oldSessions = _sessions.value
+
+        fun alive(img: AttachedImage) = File(img.path).exists()
+
+        val newChars = oldChars.map { c ->
+            if (c.images.all(::alive)) c else c.copy(images = c.images.filter(::alive))
+        }
+        val newSessions = oldSessions.map { s ->
+            val msgs = s.messages.map { m ->
+                if (m.images.all(::alive)) m else m.copy(images = m.images.filter(::alive))
+            }
+            if (msgs == s.messages) s else s.copy(messages = msgs)
+        }
+
+        if (newChars != oldChars) {
+            _characters.value = newChars
+            prefs.write(PrefsStore.KEY_CHARACTERS, ListSerializer(CharacterCard.serializer()), newChars)
+        }
+        if (newSessions != oldSessions) {
+            _sessions.value = newSessions
+            prefs.write(PrefsStore.KEY_SESSIONS, ListSerializer(Session.serializer()), newSessions)
+        }
+    }
+
     fun migrateCompressImages() {
         if (prefs.readString(KEY_IMAGE_MIGRATED) == "1") return
         val oldChars = _characters.value

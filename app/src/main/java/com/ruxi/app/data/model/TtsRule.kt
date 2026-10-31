@@ -68,8 +68,14 @@ data class TtsRule(
 @Serializable
 data class TtsRuleSet(
     val rules: List<TtsRule> = defaultRules(),
-    /** 所有规则都没命中时，整段都念 */
-    val fallbackToWhole: Boolean = true,
+    /**
+     * 所有规则都没命中时，整段都念。
+     *
+     * 默认 false —— 角色回复里没引号，通常意味着这条全是旁白/动作描写，
+     * 不是角色开口说的话。念出来等于把旁白当台词读，很怪。
+     * 想要「没引号就全念」的用户可以自己打开。
+     */
+    val fallbackToWhole: Boolean = false,
 ) {
     /**
      * 切分文本。
@@ -117,6 +123,10 @@ data class TtsRuleSet(
         if (cursor < text.length) sb.append(text, cursor, text.length)
 
         return sb.toString()
+            .replace(Regex("\\s+"), " ")
+            // 台词被挖走后，前面常留下「小声说：」「问道：」这种悬空的冒号。
+            // 冒号是引出下文的，下文没了它就成了断口，去掉。
+            .replace(Regex("[:：]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
             .trim('，', '。', '、', '；', ',', '.', ';')

@@ -337,7 +337,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = "回复里没有引号时，说明整条都是说话内容",
+                                text = "没匹配到引号时也把整段念出来（默认关闭：没引号通常全是旁白）",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

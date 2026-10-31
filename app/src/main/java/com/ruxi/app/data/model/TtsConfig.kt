@@ -44,15 +44,24 @@ data class TtsConfig(
         /**
          * 从旁白里提炼场景。
          *
-         * 只取第一个分句 —— 太长会把音色描述淹掉，而且 TTS 也不需要知道全部。
+         * 旁白常见的写法是舞台指示：「（他慢慢走过来，并说道）」。
+         * 括号本身不是内容，剥掉后再按标点切分 —— 否则会切出
+         * 「（他慢慢走过来」这种括号不配对的半截，拼进音色描述里就是乱码。
+         *
+         * 取整段（上限 300 字）—— 旁白里每一句都在描述当下的状态，
+         * 砍掉后半段会丢掉情绪线索。
          */
         fun sceneOf(aside: String): String {
             if (aside.isBlank()) return ""
-            val first = aside.split('，', '。', '、', '；', '\n')
-                .firstOrNull { it.isNotBlank() }
-                ?.trim()
-                ?: return ""
-            return first.take(40)
+
+            val clean = aside.replace(Regex("[（(\\[【][^）)\\]】]*[）)\\]】]"), " ")
+                .replace(Regex("[（()）\\[\\]【】]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            // 整段旁白都当场景 —— 只取第一句会丢掉后半段的关键信息
+            // （「她叹了口气」之后往往才是真正说明情绪的那句）
+            return clean.take(300)
         }
 
         /**

@@ -314,9 +314,9 @@ class AppStore private constructor(context: Context) {
     }
 
     companion object {
-        @Volatile
         private const val KEY_IMAGE_MIGRATED = "image_compressed_v1"
 
+        @Volatile
         private var instance: AppStore? = null
 
         fun get(context: Context): AppStore =

@@ -90,7 +90,14 @@ class ChatClient {
 
             if (!response.isSuccessful) {
                 val errText = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
-                trySend(StreamEvent.Failed(describeHttpError(response.code, errText)))
+                val code = response.code
+                trySend(
+                    StreamEvent.Failed(
+                        message = describeHttpError(code, errText),
+                        // 429 = 限流/额度抖动，5xx = 上游临时故障，都值得再试
+                        retryable = code == 429 || code in 500..599,
+                    )
+                )
                 response.close()
                 close(); return@callbackFlow
             }
@@ -140,7 +147,14 @@ class ChatClient {
             if (!isClosedForSend) trySend(StreamEvent.Done)
         } catch (e: IOException) {
             if (!isClosedForSend) {
-                trySend(StreamEvent.Failed(friendlyMessage(e)))
+                // 超时、连接被重置/中断都属于「这次网络不走运」，退避后可重试。
+                // 其它 IOException（比如 SSL 配置错）重试也没用。
+                val retryable = e is java.net.SocketTimeoutException ||
+                    e is java.net.SocketException ||
+                    e.message?.contains("unexpected end", ignoreCase = true) == true ||
+                    e.message?.contains("closed", ignoreCase = true) == true ||
+                    e.message?.contains("reset", ignoreCase = true) == true
+                trySend(StreamEvent.Failed(friendlyMessage(e), retryable))
             }
         } catch (e: Exception) {
             if (!isClosedForSend) {
@@ -448,6 +462,12 @@ sealed interface StreamEvent {
     data class Reasoning(val text: String) : StreamEvent
     /** 正常结束 */
     data object Done : StreamEvent
-    /** 失败（message 已是可读中文） */
-    data class Failed(val message: String) : StreamEvent
+    /**
+     * 失败（message 已是可读中文）。
+     *
+     * [retryable] 表示这个失败值得自动重试 —— 超时、429、5xx、连接中断这类
+     * 通常是上游临时抖动，退避几秒再发一次往往就好了。认证失败、参数错误、
+     * 额度用尽这些重试多少次都一样，标 false 免得白等。
+     */
+    data class Failed(val message: String, val retryable: Boolean = false) : StreamEvent
 }

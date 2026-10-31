@@ -32,6 +32,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+/** 失败自动重试次数上限（不含首次请求） */
+private const val MAX_RETRIES = 3
+
 /** 页面路由。用简单的 sealed class 而不是 navigation-compose —— 层级浅，够用且少一层依赖。 */
 sealed interface Route {
     data object Home : Route
@@ -168,24 +171,47 @@ fun RuxiAppRoot(store: AppStore) {
             val thinkBuffer = StringBuilder()
             var failed = false
             try {
-                ChatClient.get().stream(provider, built.messages)
-                    .collect { event ->
-                        when (event) {
-                            is StreamEvent.Delta -> {
-                                buffer.append(event.text)
-                                streamingText = buffer.toString()
-                            }
-                            is StreamEvent.Reasoning -> {
-                                thinkBuffer.append(event.text)
-                                streamingReasoning = thinkBuffer.toString()
-                            }
-                            is StreamEvent.Done -> Unit
-                            is StreamEvent.Failed -> {
-                                failed = true
-                                errorText = event.message
+                // 超时 / 429 / 5xx / 连接中断自动重试，最多 MAX_RETRIES 次。
+                // 每次重试前清空已收到的内容 —— 重试是整轮重来，接着上次的
+                // 半截输出拼会得到重复的前缀。
+                var attempt = 0
+                while (true) {
+                    buffer.setLength(0)
+                    thinkBuffer.setLength(0)
+                    streamingText = ""
+                    streamingReasoning = ""
+                    errorText = null
+                    var retryable: String? = null
+
+                    ChatClient.get().stream(provider, built.messages)
+                        .collect { event ->
+                            when (event) {
+                                is StreamEvent.Delta -> {
+                                    buffer.append(event.text)
+                                    streamingText = buffer.toString()
+                                }
+                                is StreamEvent.Reasoning -> {
+                                    thinkBuffer.append(event.text)
+                                    streamingReasoning = thinkBuffer.toString()
+                                }
+                                is StreamEvent.Done -> Unit
+                                is StreamEvent.Failed -> {
+                                    failed = true
+                                    errorText = event.message
+                                    if (event.retryable && attempt < MAX_RETRIES) {
+                                        retryable = event.message
+                                    }
+                                }
                             }
                         }
-                    }
+
+                    val reason = retryable ?: break
+                    attempt++
+                    failed = false
+                    errorText = "第 $attempt 次重试中…（$reason）"
+                    // 退避：2s、4s、8s。太急的话上游还在抖，纯浪费额度。
+                    delay(2000L shl (attempt - 1))
+                }
             } finally {
                 streaming = false
                 streamingSessionId = null
@@ -351,6 +377,7 @@ fun RuxiAppRoot(store: AppStore) {
                         streaming = streaming && streamingSessionId == session.id,
                         streamingText = streamingText,
                         errorText = errorText,
+                        onDismissError = { errorText = null },
                         showThinking = uiSettings.showThinking,
                         thinkingExpanded = uiSettings.thinkingExpanded,
                         streamingReasoning = streamingReasoning,

@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.window.Dialog
@@ -111,6 +112,7 @@ fun ChatScreen(
     streaming: Boolean,
     streamingText: String,
     errorText: String?,
+    onDismissError: () -> Unit,
     /** 是否显示模型思考过程 */
     showThinking: Boolean,
     /** 思考块默认是否展开 */
@@ -313,12 +315,32 @@ fun ChatScreen(
                     color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    )
+                    Row(
+                        modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 6.dp),
+                        )
+                        // 关闭键。错误条不自动消失（用户可能想看清内容），
+                        // 但得能手动收掉，否则一直占着屏幕。
+                        IconButton(
+                            onClick = onDismissError,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                 }
             }
 

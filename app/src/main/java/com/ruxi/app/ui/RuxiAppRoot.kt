@@ -118,6 +118,31 @@ fun RuxiAppRoot(store: AppStore) {
     var speakJob by remember { mutableStateOf<Job?>(null) }
 
     /**
+     * 拼 `user` 角色的内容：基础音色 + 场景 + 语气。
+     *
+     * 场景和语气本来就是旁白里的句子，直接接在后面读起来就是人话。
+     * 不加「场景：」「语气：」这种标签 —— TTS 会照着念标签。
+     */
+    fun buildStyle(voice: String, scene: String, mood: String): String {
+        val sb = StringBuilder()
+        val v = voice.trim().trimEnd('。', '，')
+        if (v.isNotBlank()) sb.append(v).append('。')
+
+        val s = scene.trim().trimEnd('，', '。', '、', ' ')
+        val m = mood.trim().trimEnd('。', '，')
+
+        if (s.isNotBlank()) sb.append(s)
+        if (m.isNotBlank()) {
+            if (s.isNotBlank()) sb.append("，语气").append(m).append('。')
+            else sb.append("语气").append(m).append('。')
+        } else if (s.isNotBlank()) {
+            sb.append('。')
+        }
+
+        return sb.toString().trim().ifBlank { "请用自然的声音念这句话。" }
+    }
+
+    /**
      * 朗读一条助手回复。
      *
      * ## 文本怎么分
@@ -150,31 +175,6 @@ fun RuxiAppRoot(store: AppStore) {
                 if (ev is TtsClient.TtsEvent.Failed) errorText = ev.message
             }
         }
-    }
-
-    /**
-     * 拼 `user` 角色的内容：基础音色 + 场景 + 语气。
-     *
-     * 场景和语气本来就是旁白里的句子，直接接在后面读起来就是人话。
-     * 不加「场景：」「语气：」这种标签 —— TTS 会照着念标签。
-     */
-    fun buildStyle(voice: String, scene: String, mood: String): String {
-        val sb = StringBuilder()
-        val v = voice.trim().trimEnd('。', '，')
-        if (v.isNotBlank()) sb.append(v).append('。')
-
-        val s = scene.trim().trimEnd('，', '。', '、', ' ')
-        val m = mood.trim().trimEnd('。', '，')
-
-        if (s.isNotBlank()) sb.append(s)
-        if (m.isNotBlank()) {
-            if (s.isNotBlank()) sb.append("，语气").append(m).append('。')
-            else sb.append("语气").append(m).append('。')
-        } else if (s.isNotBlank()) {
-            sb.append('。')
-        }
-
-        return sb.toString().trim().ifBlank { "请用自然的声音念这句话。" }
     }
 
     /**
